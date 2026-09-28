@@ -53,6 +53,33 @@ export function getProfile(address: string): Promise<ProfileView> {
   });
 }
 
+/** How many distinct people vouched for an address, and how many it vouched for. */
+export interface PeopleCounts {
+  vouchedBy: number;
+  backed: number;
+}
+
+const pendingCounts = new Map<string, Promise<PeopleCounts | null>>();
+
+/** `get_counts(addr)` — the durable on-chain people counters, `(vouched_by, backed)`.
+ *  They only move on a fresh first-pair claim and start at the upgrade that added them,
+ *  so older vouches are not in them. Resolves `null` when the read fails — including a
+ *  deployed contract that predates the view — so callers never mistake "unknown" for 0.
+ *  Concurrent callers (stat strip, hero, badge row) share one read. */
+export function getCounts(address: string): Promise<PeopleCounts | null> {
+  return shareInFlight(pendingCounts, address, async () => {
+    try {
+      const c = await readPublic<[number, number] | undefined>(repId(), 'get_counts', [
+        args.addr(address),
+      ]);
+      if (!Array.isArray(c)) return null;
+      return { vouchedBy: Number(c[0] ?? 0), backed: Number(c[1] ?? 0) };
+    } catch {
+      return null;
+    }
+  });
+}
+
 // ── client-side crypto for the claim secret ──
 function randomBytes(n: number): Uint8Array {
   const a = new Uint8Array(n);
