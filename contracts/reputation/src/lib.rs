@@ -376,6 +376,17 @@ impl ReputationContract {
             .get(&DataKey::Attestation(addr, schema_id))
     }
 
+    /// The 2nd-order voucher bonuses queued on `claimer`: one entry per voucher whose
+    /// first-pair claim is waiting on the claimer's first verified (Earned) action.
+    /// Empty once the claimer verifies (the queue is paid out and removed) and for any
+    /// address with nothing queued. At most `MAX_PENDING` entries.
+    pub fn get_pending(env: Env, claimer: Address) -> Vec<PendingBonus> {
+        env.storage()
+            .persistent()
+            .get(&DataKey::Pending(claimer))
+            .unwrap_or_else(|| Vec::new(&env))
+    }
+
     /// A half-card by id — for the claim preview and the expiry keeper.
     pub fn get_vouch(env: Env, vouch_id: u64) -> Option<Vouch> {
         env.storage().persistent().get(&DataKey::Vouch(vouch_id))
