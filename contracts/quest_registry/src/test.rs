@@ -167,6 +167,7 @@ fn same_week_completions_do_not_double_count_streak() {
     award(&f, &f.attester_sk, 2, &user); // same week
     assert_eq!(f.quest.get_streak(&user).weeks, 1);
 }
+
 proptest! {
     // Each case runs up to 50 signed awards in a fresh env, so keep the case count modest.
     #![proptest_config(ProptestConfig::with_cases(32))]
@@ -205,4 +206,36 @@ proptest! {
             prop_assert!(s.best >= s.weeks);
         }
     }
+}
+
+/// Release build of this contract, committed so the upgrade path can be tested without a
+/// wasm build step in CI. Refresh with `make upgrade-fixtures` after changing the contract.
+const QUEST_WASM: &[u8] = include_bytes!("../testdata/alvinmunk_quest_registry.wasm");
+
+#[test]
+fn upgrade_to_identical_wasm_preserves_quests_and_attester_keys() {
+    let f = setup();
+    f.quest.create_quest(&1u32, &2u32, &50u64);
+
+    let hash = f.env.deployer().upload_contract_wasm(QUEST_WASM);
+    f.quest.upgrade(&hash);
+
+    // The quest config and the allowlisted attester key survived: the upgraded contract
+    // still verifies the signed payload and credits Earned XP through Reputation.
+    let user = Address::generate(&f.env);
+    award(&f, &f.attester_sk, 1, &user);
+    assert_eq!(f.rep.get_earned(&user), 50);
+}
+
+#[test]
+#[should_panic(expected = "HostError: Error(Auth, InvalidAction)")]
+fn non_admin_upgrade_reverts() {
+    let env = Env::default();
+    let admin = Address::generate(&env);
+    let rep = Address::generate(&env);
+    let id = env.register(QuestRegistryContract, ());
+    let client = QuestRegistryContractClient::new(&env, &id);
+    client.init(&admin, &rep);
+    let hash = soroban_sdk::BytesN::from_array(&env, &[1; 32]);
+    client.upgrade(&hash);
 }
