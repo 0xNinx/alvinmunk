@@ -7,6 +7,8 @@ export const metadata: Metadata = {
   // title here would reset it, and the tabs below would lose the "· alvinmunk" suffix.
   title: { default: 'Home', template: TITLE_TEMPLATE },
   description: 'Your crest, recent activity, and shortcuts into the vouch loop.',
+  // The signed-in dashboard has nothing to rank; every /app/* tab inherits this.
+  robots: { index: false, follow: false },
 };
 
 /**

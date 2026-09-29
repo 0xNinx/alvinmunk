@@ -6,6 +6,9 @@ import { CLAIM_DESCRIPTION } from '@/lib/metadata';
 export const metadata: Metadata = {
   title: 'Someone vouched for you',
   description: CLAIM_DESCRIPTION,
+  // A claim link is personal and single-use, and older ones carry the secret in `?s=`
+  // (#78): keep them out of search results.
+  robots: { index: false, follow: false },
 };
 
 export default function ClaimLayout({ children }: { children: React.ReactNode }) {
