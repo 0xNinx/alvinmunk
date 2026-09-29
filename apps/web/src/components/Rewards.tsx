@@ -20,9 +20,11 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { MoneyFlowConfirm } from '@/components/MoneyFlowConfirm';
 import { withTimeout, humanizeError } from '@/lib/utils';
 import { toast } from '@/components/ui/toaster';
 import { useTranslations } from '@/lib/i18n';
+import { config } from '@/lib/stellar';
 
 // Rewards contract error codes → friendly copy (mirrors contracts/rewards Error enum).
 // Built from `t` so the copy follows the active locale. 15–17 and 19 are admin-only
@@ -62,6 +64,9 @@ export function Rewards({ address }: { address: string }) {
   const [busy, setBusy] = useState<number | null>(null);
   const [hash, setHash] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [pendingClaimId, setPendingClaimId] = useState<number | null>(null);
+  const isMainnet = config.network === 'mainnet';
 
   const refresh = useCallback(async () => {
     // Timeout the gating reads so a slow RPC degrades to "no rewards" instead of an
@@ -91,6 +96,16 @@ export function Rewards({ address }: { address: string }) {
   }, [refresh]);
 
   async function onClaim(id: number) {
+    if (isMainnet) {
+      setPendingClaimId(id);
+      setShowConfirm(true);
+    } else {
+      // Testnet: proceed directly
+      await executeClaim(id);
+    }
+  }
+
+  async function executeClaim(id: number) {
     setBusy(id);
     setError(null);
     setHash(null);
@@ -107,6 +122,14 @@ export function Rewards({ address }: { address: string }) {
       setBusy(null);
     }
   }
+
+  const handleConfirmClaim = () => {
+    setShowConfirm(false);
+    if (pendingClaimId !== null) {
+      executeClaim(pendingClaimId);
+      setPendingClaimId(null);
+    }
+  };
 
   return (
     <Frame label={t('rewards.frame')} index="04" accent="secondary">
@@ -191,6 +214,14 @@ export function Rewards({ address }: { address: string }) {
         {error && <p className="mt-2 text-sm text-destructive">{error}</p>}
 
         <AnchorCashout address={address} />
+
+        <MoneyFlowConfirm
+          open={showConfirm}
+          onClose={() => setShowConfirm(false)}
+          onConfirm={handleConfirmClaim}
+          type="claim"
+          showUndo={false}
+        />
       </div>
     </Frame>
   );

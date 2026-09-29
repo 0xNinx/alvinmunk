@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useState } from 'react';
 import { getWallet } from '@/lib/wallet';
-import { txExplorerUrl } from '@/lib/stellar';
+import { txExplorerUrl, config } from '@/lib/stellar';
 import {
   enableUsdc,
   getUsdcBalance,
@@ -22,10 +22,12 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { StateArt } from '@/components/ui/state-art';
 import { Avatar } from '@/components/Avatar';
+import { MoneyFlowConfirm } from '@/components/MoneyFlowConfirm';
 import { isStellarAddress, shortAddr } from '@alvinmunk/shared';
 import { withTimeout, humanizeError } from '@/lib/utils';
 import { toast } from '@/components/ui/toaster';
 import { useTranslations } from '@/lib/i18n';
+import { getItem, setItem } from '@/lib/storage';
 
 // Rewards contract error codes that can surface on tip (mirrors contracts/rewards Error enum).
 // An insufficient-USDC failure (the SAC's own error) is caught by humanizeError directly.
@@ -63,6 +65,17 @@ export function Tip({ address }: { address: string }) {
   const [busy, setBusy] = useState<null | 'enable' | 'faucet' | 'tip'>(null);
   const [hash, setHash] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [isFirstMainnetTip, setIsFirstMainnetTip] = useState(false);
+  const isMainnet = config.network === 'mainnet';
+
+  // Check if this is the first mainnet tip on this device
+  useEffect(() => {
+    if (isMainnet) {
+      const hasTippedBefore = getItem('alvinmunk_has_tipped_mainnet');
+      setIsFirstMainnetTip(!hasTippedBefore);
+    }
+  }, [isMainnet]);
 
   const refresh = useCallback(() => {
     // Timeout the gating reads so a slow Horizon/RPC degrades to a usable state instead
@@ -126,6 +139,11 @@ export function Tip({ address }: { address: string }) {
             ? t('tip.toast.faucet')
             : t('tip.toast.enable'),
       );
+      // Mark that user has tipped on mainnet
+      if (kind === 'tip' && isMainnet) {
+        setItem('alvinmunk_has_tipped_mainnet', 'true');
+        setIsFirstMainnetTip(false);
+      }
       refresh();
     } catch (e) {
       const msg = humanizeError(e, buildTipErrors(t), 'tip');
@@ -135,6 +153,34 @@ export function Tip({ address }: { address: string }) {
       setBusy(null);
     }
   }
+
+  const handleTipClick = () => {
+    if (isMainnet) {
+      setShowConfirm(true);
+    } else {
+      // Testnet: proceed directly
+      run('tip', async () => {
+        const wallet = await getWallet();
+        const check = validateTip({ to: resolved!, amount }, wallet.address);
+        if (!check.ok) {
+          throw new Error(resolved === wallet.address ? t('tip.error.ownWallet') : check.error);
+        }
+        await tip(wallet, resolved!, check.value);
+      });
+    }
+  };
+
+  const handleConfirmTip = () => {
+    setShowConfirm(false);
+    run('tip', async () => {
+      const wallet = await getWallet();
+      const check = validateTip({ to: resolved!, amount }, wallet.address);
+      if (!check.ok) {
+        throw new Error(resolved === wallet.address ? t('tip.error.ownWallet') : check.error);
+      }
+      await tip(wallet, resolved!, check.value);
+    });
+  };
 
   return (
     <Frame label={t('tip.frame')} index="03">
@@ -201,19 +247,7 @@ export function Tip({ address }: { address: string }) {
                 className="w-24"
               />
               <Button
-                onClick={() =>
-                  run('tip', async () => {
-                    const wallet = await getWallet();
-                    // The contract's own two checks (#144), run here first so a tip that
-                    // could only revert never costs a fee. `resolved` is guaranteed a
-                    // valid key here (the button is gated on it).
-                    const check = validateTip({ to: resolved!, amount }, wallet.address);
-                    if (!check.ok) {
-                      throw new Error(resolved === wallet.address ? t('tip.error.ownWallet') : check.error);
-                    }
-                    await tip(wallet, resolved!, check.value);
-                  })
-                }
+                onClick={handleTipClick}
                 disabled={busy !== null || resolving || !resolved || !isValidAmount(amount)}
                 className="flex-1"
               >
@@ -238,6 +272,18 @@ export function Tip({ address }: { address: string }) {
         )}
         {error && <p className="mt-2 text-sm text-destructive">{error}</p>}
       </div>
+
+      <MoneyFlowConfirm
+        open={showConfirm}
+        onClose={() => setShowConfirm(false)}
+        onConfirm={handleConfirmTip}
+        type="tip"
+        recipientAddress={resolved || undefined}
+        recipientHandle={!isStellarAddress(to.trim()) ? to.trim() : undefined}
+        amount={amount}
+        showUndo={!isFirstMainnetTip}
+        isFirstMainnetTip={isFirstMainnetTip}
+      />
     </Frame>
   );
 }
