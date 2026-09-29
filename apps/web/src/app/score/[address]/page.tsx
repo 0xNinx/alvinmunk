@@ -1,23 +1,20 @@
 import { notFound } from 'next/navigation';
 import { Sparkles, Users, ShieldCheck, Code, AlertCircle } from 'lucide-react';
-import { getScores, getPeopleCounts, getQuestAttestation } from '@/lib/reputation';
-import { reverseHandles } from '@/lib/registry';
-import { fetchLeaderboard } from '@/lib/leaderboard';
-import { loadProfile } from '@/lib/profile';
+import { getScores, getQuestAttestation } from '@/lib/reputation';
+import { getPeopleCounts } from '@/lib/constellation';
 import { Crest } from '@/components/brand/crest';
 import { Frame } from '@/components/fx/frame';
-import { Stamp } from '@/components/fx/stamp';
-import { ShareRow } from '@/components/fx/share-row';
-import { BadgeGallery } from '@/components/BadgeGallery';
-import { Skeleton } from '@/components/ui/skeleton';
-import { buttonVariants } from '@/components/ui/button';
-import { shortAddr } from '@alvinmunk/shared';
-import { cn } from '@/lib/utils';
-import { buildNetworkConfig } from '@/lib/stellar';
+import { StateArt } from '@/components/ui/state-art';
+import { Sticker } from '@/components/ui/sticker';
+import { isStellarAddress, shortAddr } from '@alvinmunk/shared';
+import { ReputationSnippet } from '@/components/ReputationSnippet';
+import { ReadOnlyBanner } from '@/components/read-only-banner';
+import { readNetworkFor } from '@/lib/read-network';
 
 interface ScorePageProps {
   params: Promise<{ address: string }>;
-  searchParams: Promise<{ network?: string }>;
+  /** `?network=testnet` reads the testnet deployment, read-only (lib/read-network). */
+  searchParams?: Promise<{ network?: string | string[] }>;
 }
 
 // A bare title: the root template adds " · alvinmunk" (appending it here doubled it, #204).
@@ -36,13 +33,7 @@ export async function generateMetadata({ params }: ScorePageProps): Promise<{
 
 export default async function ScorePage({ params, searchParams }: ScorePageProps) {
   const { address } = await params;
-  const { network: networkParam } = await searchParams;
-  
-  // Build network config for override
-  const networkConfig = networkParam && (networkParam === 'testnet' || networkParam === 'mainnet')
-    ? buildNetworkConfig(networkParam)
-    : undefined;
-  const isOverride = !!networkConfig;
+  const net = readNetworkFor((await searchParams)?.network);
 
   // Validate address format
   if (!isStellarAddress(address)) {
@@ -62,9 +53,9 @@ export default async function ScorePage({ params, searchParams }: ScorePageProps
 
   // Fetch reputation data (read-only, no wallet required)
   const [scores, people, questAttestation] = await Promise.all([
-    getScores(address, networkConfig).catch(() => ({ social: 0, earned: 0 })),
-    getPeopleCounts(address, networkConfig).catch(() => ({ vouchedBy: 0, backed: 0 })),
-    getQuestAttestation(address, networkConfig).catch(() => null),
+    getScores(address, net).catch(() => ({ social: 0, earned: 0 })),
+    getPeopleCounts(address, net).catch(() => ({ vouchedBy: 0, backed: 0 })),
+    getQuestAttestation(address, net).catch(() => null),
   ]);
 
   const hasActivity =
@@ -77,6 +68,7 @@ export default async function ScorePage({ params, searchParams }: ScorePageProps
   if (!hasActivity) {
     return (
       <div className="container max-w-2xl py-14">
+        {net && <ReadOnlyBanner network={net.network} />}
         <p className="font-mono text-[11px] uppercase tracking-[0.28em] text-primary/80">{'// not_found'}</p>
         <div className="mt-6 flex flex-col items-center gap-4 text-center">
           <StateArt kind="empty-leaderboard" size={300} className="motion-safe:animate-float" />
@@ -92,6 +84,7 @@ export default async function ScorePage({ params, searchParams }: ScorePageProps
 
   return (
     <div className="container max-w-2xl py-14">
+      {net && <ReadOnlyBanner network={net.network} />}
       {/* Header */}
       <p className="font-mono text-[11px] uppercase tracking-[0.28em] text-primary/80">{'// public_reputation'}</p>
       <div className="mt-4 flex items-end justify-between border-b border-border/60 pb-3">
@@ -169,18 +162,21 @@ export default async function ScorePage({ params, searchParams }: ScorePageProps
         </Frame>
       )}
 
-      {/* For developers section */}
-      <section className="mt-12">
-        <div className="flex items-center gap-2 border-b border-border/60 pb-3">
-          <Code className="size-4 text-muted-foreground" />
-          <h2 className="font-display text-xl font-semibold tracking-tight">For developers</h2>
-        </div>
-        <p className="mt-3 text-sm text-muted-foreground">
-          Read this wallet&apos;s Social and Earned XP straight from the reputation contract with{' '}
-          <code className="font-mono text-xs">@stellar/stellar-sdk</code>. No wallet or API key needed.
-        </p>
-        <ReputationSnippet address={address} className="mt-4" />
-      </section>
+      {/* For developers section — the snippet reads the deployment's own contract, so it
+          would not match an override's data. */}
+      {!net && (
+        <section className="mt-12">
+          <div className="flex items-center gap-2 border-b border-border/60 pb-3">
+            <Code className="size-4 text-muted-foreground" />
+            <h2 className="font-display text-xl font-semibold tracking-tight">For developers</h2>
+          </div>
+          <p className="mt-3 text-sm text-muted-foreground">
+            Read this wallet&apos;s Social and Earned XP straight from the reputation contract with{' '}
+            <code className="font-mono text-xs">@stellar/stellar-sdk</code>. No wallet or API key needed.
+          </p>
+          <ReputationSnippet address={address} className="mt-4" />
+        </section>
+      )}
     </div>
   );
 }

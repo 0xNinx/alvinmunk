@@ -305,6 +305,9 @@
   "activity.page.leaderboard.title": "See the leaderboard",
   "activity.page.leaderboard.body": "The most-connected constellations, ranked.",
 
+  "readOnly.stamp": "{network} · READ-ONLY",
+  "readOnly.body": "Archived {network} data. Vouching, tipping and connecting a wallet are off on this view.",
+
   "leaderboard.eyebrow": "// the_night_sky",
   "leaderboard.title": "The most-connected",
   "leaderboard.syncDelayed": "sync delayed",

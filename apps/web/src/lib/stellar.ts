@@ -4,9 +4,7 @@
  * (belts/00-strategy: defer the indexer until scale demands it).
  */
 import { Horizon, Keypair, rpc, xdr } from '@stellar/stellar-sdk';
-import { readNetworkConfig, validateNetworkConfig, type NetworkConfig as SharedNetworkConfig } from '@alvinmunk/shared';
-
-export type NetworkConfig = SharedNetworkConfig;
+import { readNetworkConfig, validateNetworkConfig } from '@alvinmunk/shared';
 
 // Next.js only inlines LITERAL `process.env.NEXT_PUBLIC_*` member expressions into the
 // client bundle — passing the whole `process.env` object would leave these undefined in
@@ -23,27 +21,6 @@ export const config = readNetworkConfig({
   NEXT_PUBLIC_REGISTRY_CONTRACT_ID: process.env.NEXT_PUBLIC_REGISTRY_CONTRACT_ID,
   NEXT_PUBLIC_GATE_CONTRACT_ID: process.env.NEXT_PUBLIC_GATE_CONTRACT_ID,
 });
-
-/**
- * Build a network-specific read-only config for testnet or mainnet (mirrors the stats route).
- * Used for the ?network=testnet override on public pages to preserve testnet history after
- * mainnet cutover. Only for read operations — write actions always use the default config.
- */
-export function buildNetworkConfig(network: 'testnet' | 'mainnet'): NetworkConfig {
-  const prefix = network === 'testnet' ? 'NEXT_PUBLIC_' : 'MAINNET_';
-  return readNetworkConfig({
-    NEXT_PUBLIC_STELLAR_NETWORK: network,
-    NEXT_PUBLIC_RPC_URL: process.env[`${prefix}RPC_URL`],
-    NEXT_PUBLIC_NETWORK_PASSPHRASE: process.env[`${prefix}NETWORK_PASSPHRASE`],
-    NEXT_PUBLIC_HORIZON_URL: process.env[`${prefix}HORIZON_URL`],
-    NEXT_PUBLIC_REPUTATION_CONTRACT_ID: process.env[`${prefix}REPUTATION_CONTRACT_ID`],
-    NEXT_PUBLIC_QUEST_REGISTRY_CONTRACT_ID: process.env[`${prefix}QUEST_REGISTRY_CONTRACT_ID`],
-    NEXT_PUBLIC_REWARDS_CONTRACT_ID: process.env[`${prefix}REWARDS_CONTRACT_ID`],
-    NEXT_PUBLIC_USDC_SAC_ID: process.env[`${prefix}USDC_SAC_ID`],
-    NEXT_PUBLIC_REGISTRY_CONTRACT_ID: process.env[`${prefix}REGISTRY_CONTRACT_ID`],
-    NEXT_PUBLIC_GATE_CONTRACT_ID: process.env[`${prefix}GATE_CONTRACT_ID`],
-  });
-}
 
 /**
  * Everything wrong with the resolved config (empty = consistent) — the one validation

@@ -4,10 +4,11 @@
  * pull and decode them, so the durable-indexer swap (Blue/Black, belts/00-strategy) is a
  * one-file change. RPC-direct for the MVP; degrades to [] on any failure.
  */
-import { Address, scValToNative, xdr, rpc } from '@stellar/stellar-sdk';
+import { Address, scValToNative, xdr, type rpc } from '@stellar/stellar-sdk';
 import { EVENTS } from '@alvinmunk/shared';
-import { server, config, type NetworkConfig } from './stellar';
+import { server, config } from './stellar';
 import { shareInFlight } from './utils';
+import type { ReadNetwork } from './read-network';
 
 /**
  * RPC event retention is ~24h; staying within ~9000 ledgers keeps `getEvents` returning
@@ -56,9 +57,14 @@ export function decodeScVal(v: xdr.ScVal | string): unknown {
  * caller degrades gracefully. Concurrent callers (feed, constellation, badges mounting
  * together) share one scan.
  */
-export async function fetchReputationEvents(options?: { throwOnError?: boolean; networkConfig?: NetworkConfig }): Promise<RepEvent[]> {
-  const contractId = options?.networkConfig ? options.networkConfig.contracts.reputation : config.contracts.reputation;
-  return fetchContractEvents(contractId, ['*', '*'], PAGE_SIZE * MAX_PAGES, options?.throwOnError, options?.networkConfig);
+export async function fetchReputationEvents(options?: {
+  throwOnError?: boolean;
+  /** Read another network (the ?network= override); default: the deployment's. */
+  net?: ReadNetwork | null;
+}): Promise<RepEvent[]> {
+  const net = options?.net;
+  const contractId = net ? net.contracts.reputation : config.contracts.reputation;
+  return fetchContractEvents(contractId, ['*', '*'], PAGE_SIZE * MAX_PAGES, options?.throwOnError, net);
 }
 
 /**
@@ -97,14 +103,20 @@ export async function fetchTipsSent(from: string, limit = 1): Promise<RepEvent[]
 
 const pendingScans = new Map<string, Promise<RepEvent[]>>();
 
-function fetchContractEvents(contractId: string, topics: string[], limit: number, throwOnError?: boolean, networkConfig?: NetworkConfig): Promise<RepEvent[]> {
+function fetchContractEvents(
+  contractId: string,
+  topics: string[],
+  limit: number,
+  throwOnError?: boolean,
+  net?: ReadNetwork | null,
+): Promise<RepEvent[]> {
   if (!contractId) {
     if (throwOnError) return Promise.reject(new Error('No contract ID'));
     return Promise.resolve([]);
   }
-  const cacheKey = networkConfig ? `${contractId}|${topics.join(',')}|${limit}|${throwOnError}|${networkConfig.network}` : `${contractId}|${topics.join(',')}|${limit}|${throwOnError}`;
-  return shareInFlight(pendingScans, cacheKey, () =>
-    scanContractEvents(contractId, topics, limit, throwOnError, networkConfig),
+  const key = `${net?.network ?? ''}|${contractId}|${topics.join(',')}|${limit}|${throwOnError}`;
+  return shareInFlight(pendingScans, key, () =>
+    scanContractEvents(net?.server ?? server, contractId, topics, limit, throwOnError),
   );
 }
 
@@ -120,14 +132,16 @@ function fetchContractEvents(contractId: string, topics: string[], limit: number
  * A request failing part-way drops the whole scan to []: an oldest-only prefix would read
  * to every caller as "nothing happened since".
  */
-async function scanContractEvents(contractId: string, topics: string[], limit: number, throwOnError?: boolean, networkConfig?: NetworkConfig): Promise<RepEvent[]> {
-  const rpcServer = networkConfig ? new rpc.Server(networkConfig.rpcUrl || 'https://url-not-configured.invalid', {
-    allowHttp: networkConfig.rpcUrl?.startsWith('http://') ?? false,
-  }) : server;
-  
+async function scanContractEvents(
+  server: rpc.Server,
+  contractId: string,
+  topics: string[],
+  limit: number,
+  throwOnError?: boolean,
+): Promise<RepEvent[]> {
   let startLedger: number;
   try {
-    const latest = await rpcServer.getLatestLedger();
+    const latest = await server.getLatestLedger();
     startLedger = Math.max(1, latest.sequence - EVENT_LEDGER_WINDOW);
   } catch (err) {
     if (throwOnError) throw err;
@@ -142,7 +156,7 @@ async function scanContractEvents(contractId: string, topics: string[], limit: n
     let cursor: string | undefined;
     for (let page = 0; page < MAX_PAGES && out.length < limit; page++) {
       const pageLimit = Math.min(PAGE_SIZE, limit - out.length);
-      const res = await rpcServer.getEvents(
+      const res = await server.getEvents(
         cursor ? { filters, cursor, limit: pageLimit } : { filters, startLedger, limit: pageLimit },
       );
       for (const ev of res.events) {

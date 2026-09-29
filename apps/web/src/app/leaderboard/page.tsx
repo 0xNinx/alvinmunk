@@ -1,34 +1,41 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { fetchLeaderboard, reverseHandles } from '@/lib';
+import { fetchLeaderboard } from '@/lib/leaderboard';
 import { type LeaderboardEntry } from '@alvinmunk/shared';
 import { loadProfile } from '@/lib/profile';
+import { reverseHandles } from '@/lib/registry';
 import { Crest } from '@/components/brand/crest';
 import { Frame } from '@/components/fx/frame';
-import { Stamp } from '@/components/fx/stamp';
+import { ShareRow } from '@/components/fx/share-row';
 import { Skeleton } from '@/components/ui/skeleton';
-import { buttonVariants } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
-import { buildNetworkConfig } from '@/lib/stellar';
-import { useSearchParams } from 'next/navigation';
+import { StateArt } from '@/components/ui/state-art';
+import { Sticker } from '@/components/ui/sticker';
 import { useTranslations } from '@/lib/i18n';
 import { shortAddr } from '@alvinmunk/shared';
+import { cn } from '@/lib/utils';
+import { readNetworkFor, withReadNetwork, type ReadNetwork } from '@/lib/read-network';
+import { ReadOnlyBanner } from '@/components/read-only-banner';
 
-export default function LeaderboardPage() {
+export default function LeaderboardPage({
+  searchParams,
+}: {
+  searchParams?: { network?: string | string[] };
+}) {
+  // `?network=testnet` ranks the testnet deployment, read-only (lib/read-network). Keyed so
+  // switching networks starts over instead of mixing the two networks' rows and handles.
+  const net = readNetworkFor(searchParams?.network);
+  return <Leaderboard key={net?.network ?? 'deployment'} net={net} />;
+}
+
+function Leaderboard({ net }: { net: ReadNetwork | null }) {
   const t = useTranslations();
-  const searchParams = useSearchParams();
-  const networkParam = searchParams.get('network') as 'testnet' | 'mainnet' | null;
-  const networkConfig = networkParam && (networkParam === 'testnet' || networkParam === 'mainnet')
-    ? buildNetworkConfig(networkParam)
-    : undefined;
-  const isOverride = !!networkConfig;
-  
   const [rows, setRows] = useState<LeaderboardEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [handles, setHandles] = useState<Record<string, string | null>>({});
   const [stale, setStale] = useState(false);
-  const me = loadProfile()?.address;
+  // The signed-in profile lives on the deployment's network, never the override's.
+  const me = net ? undefined : loadProfile()?.address;
 
   /**
    * Track addresses whose lookup is already in-flight (or done) so we never
@@ -56,7 +63,7 @@ export default function LeaderboardPage() {
     let alive = true;
     // One batched reverse_many read (lib/registry.ts) instead of N single-address
     // calls — this is what #319 already gives us for free.
-    reverseHandles(missing, networkConfig).then((map) => alive && setHandles((h) => ({ ...h, ...map })));
+    reverseHandles(missing, net).then((map) => alive && setHandles((h) => ({ ...h, ...map })));
 
     // We do NOT remove addresses from pendingHandles on cleanup — if the component
     // unmounts the lookup is abandoned, but a fresh mount gets a fresh ref and starts
@@ -74,7 +81,7 @@ export default function LeaderboardPage() {
         // A new `rows` array reference on every tick is fine now — the handle-lookup
         // effect above depends on `addressKey` (the stable, sorted set of addresses),
         // not on `rows` itself, so a quiet poll no longer re-triggers or cancels it.
-        const r = await fetchLeaderboard({ throwOnError: true, networkConfig });
+        const r = await fetchLeaderboard({ throwOnError: true, net });
         if (alive) { setRows(r); setStale(false); }
       } catch {
         if (alive) setStale(true);
@@ -85,10 +92,11 @@ export default function LeaderboardPage() {
     void tick();
     const iv = setInterval(tick, 5000);
     return () => { alive = false; clearInterval(iv); };
-  }, []);
+  }, [net]);
 
   return (
     <div className="container max-w-2xl py-14">
+      {net && <ReadOnlyBanner network={net.network} />}
       <p className="font-mono text-[11px] uppercase tracking-[0.28em] text-primary/80">{t('leaderboard.eyebrow')}</p>
       <div className="mt-4 flex items-end justify-between border-b border-border/60 pb-3">
         <h1 className="font-display text-4xl font-semibold tracking-tight">{t('leaderboard.title')}</h1>
@@ -114,7 +122,7 @@ export default function LeaderboardPage() {
         <p className="font-mono text-xs text-muted-foreground">
           {t('leaderboard.meta')}
         </p>
-        <ShareRow path="/leaderboard" text={t('leaderboard.share')} />
+        <ShareRow path={withReadNetwork('/leaderboard', net)} text={t('leaderboard.share')} />
       </div>
 
       <Frame label={t('leaderboard.frame')} index={`${rows.length || '—'} entries`} className="mt-6">
@@ -135,7 +143,7 @@ export default function LeaderboardPage() {
                 onClick={() => {
                   setLoading(true);
                   setStale(false);
-                  fetchLeaderboard({ throwOnError: true })
+                  fetchLeaderboard({ throwOnError: true, net })
                     .then(r => { setRows(r); setStale(false); })
                     .catch(() => setStale(true))
                     .finally(() => setLoading(false));

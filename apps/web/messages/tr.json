@@ -305,6 +305,9 @@
   "activity.page.leaderboard.title": "Sıralamayı gör",
   "activity.page.leaderboard.body": "En çok bağlantılı takımyıldızları, sıralı.",
 
+  "readOnly.stamp": "{network} · SALT OKUNUR",
+  "readOnly.body": "Arşivlenmiş {network} verisi. Bu görünümde kefil olma, bahşiş ve cüzdan bağlama kapalı.",
+
   "leaderboard.eyebrow": "// gece_gökyüzü",
   "leaderboard.title": "En çok bağlantılı olanlar",
   "leaderboard.syncDelayed": "senkronizasyon gecikti",

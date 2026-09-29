@@ -13,7 +13,6 @@ import {
   type AvatarConfig,
   type KitAvatar,
 } from './avatar';
-import { type NetworkConfig } from './contracts';
 
 // Shared profile-card renderer for the OG image routes (/u and /v). Resolves the handle
 // on-chain and returns Satori-compatible JSX. Literal colors (Satori has no CSS vars).
@@ -44,7 +43,7 @@ const MUTED = '#8b86a8';
 /** XP tracks + the people counts the card shows. */
 export type OgScores = { social: number; earned: number } & PeopleCounts;
 
-export async function ogResolve(handle: string, networkConfig?: NetworkConfig): Promise<{
+export async function ogResolve(handle: string): Promise<{
   address: string | null;
   scores: OgScores;
   /** The published face (undefined → the deterministic default for `address`). */
@@ -57,12 +56,12 @@ export async function ogResolve(handle: string, networkConfig?: NetworkConfig): 
   let avatar: AvatarConfig | undefined;
   let bio = '';
   try {
-    address = await resolveHandle(handle, networkConfig);
+    address = await resolveHandle(handle);
     if (address) {
       const [s, p, meta] = await Promise.all([
-        getScores(address, networkConfig).catch(() => ({ social: 0, earned: 0 })),
-        getPeopleCounts(address, networkConfig).catch(() => ({ vouchedBy: 0, backed: 0 })),
-        getMeta(address, networkConfig), // null on a registry without get_meta → default face, no bio
+        getScores(address).catch(() => ({ social: 0, earned: 0 })),
+        getPeopleCounts(address).catch(() => ({ vouchedBy: 0, backed: 0 })),
+        getMeta(address), // null on a registry without get_meta → default face, no bio
       ]);
       scores = { ...s, ...p };
       avatar = meta?.avatar;
