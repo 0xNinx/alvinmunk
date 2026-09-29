@@ -8,6 +8,7 @@ import { artSeed, EVENTS } from '@alvinmunk/shared';
 import { fetchReputationEvents } from './events';
 import { getCounts, getVouch, type PeopleCounts } from './reputation';
 import { foldVouchEdges, type ChainEvent } from './badges';
+import { type NetworkConfig } from './contracts';
 
 /** A person who vouched you — one star in your constellation. */
 export interface VoucherStar {
@@ -56,8 +57,11 @@ export async function fetchVouchersOf(address: string, max = 14): Promise<Vouche
  * number, so each side takes the larger — a counter still at 0 (or a deployed contract
  * that predates the view) falls back to the events. Never derived from Social XP.
  */
-export async function getPeopleCounts(address: string): Promise<PeopleCounts> {
-  const [onchain, events] = await Promise.all([getCounts(address), fetchReputationEvents()]);
+export async function getPeopleCounts(address: string, networkConfig?: NetworkConfig): Promise<PeopleCounts> {
+  const [onchain, events] = await Promise.all([
+    getCounts(address, networkConfig),
+    fetchReputationEvents({ networkConfig }),
+  ]);
   const recent = foldVouchEdges(events, address);
   return {
     vouchedBy: Math.max(onchain?.vouchedBy ?? 0, recent.vouchedBy.length),

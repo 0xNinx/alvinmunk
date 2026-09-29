@@ -1,16 +1,23 @@
 import { notFound } from 'next/navigation';
 import { Sparkles, Users, ShieldCheck, Code, AlertCircle } from 'lucide-react';
-import { getScores, getQuestAttestation } from '@/lib/reputation';
-import { getPeopleCounts } from '@/lib/constellation';
+import { getScores, getPeopleCounts, getQuestAttestation } from '@/lib/reputation';
+import { reverseHandles } from '@/lib/registry';
+import { fetchLeaderboard } from '@/lib/leaderboard';
+import { loadProfile } from '@/lib/profile';
 import { Crest } from '@/components/brand/crest';
 import { Frame } from '@/components/fx/frame';
-import { StateArt } from '@/components/ui/state-art';
-import { Sticker } from '@/components/ui/sticker';
-import { isStellarAddress, shortAddr } from '@alvinmunk/shared';
-import { ReputationSnippet } from '@/components/ReputationSnippet';
+import { Stamp } from '@/components/fx/stamp';
+import { ShareRow } from '@/components/fx/share-row';
+import { BadgeGallery } from '@/components/BadgeGallery';
+import { Skeleton } from '@/components/ui/skeleton';
+import { buttonVariants } from '@/components/ui/button';
+import { shortAddr } from '@alvinmunk/shared';
+import { cn } from '@/lib/utils';
+import { buildNetworkConfig } from '@/lib/stellar';
 
 interface ScorePageProps {
   params: Promise<{ address: string }>;
+  searchParams: Promise<{ network?: string }>;
 }
 
 export async function generateMetadata({ params }: ScorePageProps): Promise<{
@@ -24,8 +31,15 @@ export async function generateMetadata({ params }: ScorePageProps): Promise<{
   };
 }
 
-export default async function ScorePage({ params }: ScorePageProps) {
+export default async function ScorePage({ params, searchParams }: ScorePageProps) {
   const { address } = await params;
+  const { network: networkParam } = await searchParams;
+  
+  // Build network config for override
+  const networkConfig = networkParam && (networkParam === 'testnet' || networkParam === 'mainnet')
+    ? buildNetworkConfig(networkParam)
+    : undefined;
+  const isOverride = !!networkConfig;
 
   // Validate address format
   if (!isStellarAddress(address)) {
@@ -45,9 +59,9 @@ export default async function ScorePage({ params }: ScorePageProps) {
 
   // Fetch reputation data (read-only, no wallet required)
   const [scores, people, questAttestation] = await Promise.all([
-    getScores(address).catch(() => ({ social: 0, earned: 0 })),
-    getPeopleCounts(address).catch(() => ({ vouchedBy: 0, backed: 0 })),
-    getQuestAttestation(address).catch(() => null),
+    getScores(address, networkConfig).catch(() => ({ social: 0, earned: 0 })),
+    getPeopleCounts(address, networkConfig).catch(() => ({ vouchedBy: 0, backed: 0 })),
+    getQuestAttestation(address, networkConfig).catch(() => null),
   ]);
 
   const hasActivity =

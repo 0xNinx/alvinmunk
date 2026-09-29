@@ -17,6 +17,7 @@ import {
 } from '@alvinmunk/shared';
 import { fetchReputationEvents } from './events';
 import { readJSON, writeJSON } from './storage';
+import { type NetworkConfig } from './contracts';
 
 const SNAPSHOT_KEY = 'alvinmunk.leaderboard.snapshot';
 
@@ -28,7 +29,7 @@ function saveSnapshot(records: SocialRecord[]): void {
 }
 
 /** Pull recent reputation events → social records + claimed vouch pairs. */
-export async function fetchWindow(options?: { throwOnError?: boolean }): Promise<{ records: SocialRecord[]; pairs: VouchPair[] }> {
+export async function fetchWindow(options?: { throwOnError?: boolean; networkConfig?: NetworkConfig }): Promise<{ records: SocialRecord[]; pairs: VouchPair[] }> {
   const records: SocialRecord[] = [];
   const pairs: VouchPair[] = [];
 
@@ -44,7 +45,7 @@ export async function fetchWindow(options?: { throwOnError?: boolean }): Promise
   return { records, pairs };
 }
 
-export async function fetchLeaderboard(options?: { throwOnError?: boolean }): Promise<LeaderboardEntry[]> {
+export async function fetchLeaderboard(options?: { throwOnError?: boolean; networkConfig?: NetworkConfig }): Promise<LeaderboardEntry[]> {
   // `throwOnError` always propagates a failure — regardless of whether a snapshot exists —
   // so the caller can tell an outage apart from a genuinely quiet network. Swallowing the
   // error whenever a snapshot happened to be present would silently keep the "live" badge

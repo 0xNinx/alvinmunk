@@ -20,9 +20,11 @@ import {
   xdr,
   type Transaction,
 } from '@stellar/stellar-sdk';
-import { server, networkPassphrase, config } from './stellar';
+import { server, networkPassphrase, config, buildNetworkConfig, type NetworkConfig as StellarNetworkConfig } from './stellar';
 import { submitSigned } from './submit';
 import type { Wallet } from './wallet';
+
+export type NetworkConfig = StellarNetworkConfig;
 
 const BASE_FEE = '1000000'; // 0.1 XLM ceiling; simulation sets the real fee.
 
@@ -31,6 +33,9 @@ export const rewardsId = () => config.contracts.rewards;
 export const questId = () => config.contracts.questRegistry;
 export const registryId = () => config.contracts.registry;
 export const gateId = () => config.contracts.gate;
+
+/** Get contract ID from a specific network config (for network override). */
+export const contractId = (cfg: NetworkConfig, key: keyof NetworkConfig['contracts']) => cfg.contracts[key];
 
 /** ScVal builders for the contract ABIs. */
 export const args = {
@@ -52,21 +57,28 @@ export async function readContract<T>(
   method: string,
   callArgs: xdr.ScVal[],
   sourceAccount: string,
+  networkConfig?: NetworkConfig,
 ): Promise<T> {
   requireDeployed(contractId, method);
   // Read-only simulation needs only a well-formed source envelope, not a real on-chain
   // account. A passkey wallet's address is a CONTRACT (C…), which isn't a classic account
   // (`getAccount(C…)` 404s), so synthesize a throwaway source for it; any G… source is used
   // directly to keep behavior unchanged.
+  const rpcServer = networkConfig ? new rpc.Server(networkConfig.rpcUrl || 'https://url-not-configured.invalid', {
+    allowHttp: networkConfig.rpcUrl?.startsWith('http://') ?? false,
+  }) : server;
+  const passphrase = networkConfig?.networkPassphrase ?? networkPassphrase;
+  
   const account = sourceAccount.startsWith('C')
     ? new Account(Keypair.random().publicKey(), '0')
-    : await server.getAccount(sourceAccount);
-  const tx = new TransactionBuilder(account, { fee: BASE_FEE, networkPassphrase })
+    : await rpcServer.getAccount(sourceAccount);
+  
+  const tx = new TransactionBuilder(account, { fee: BASE_FEE, networkPassphrase: passphrase })
     .addOperation(new Contract(contractId).call(method, ...callArgs))
     .setTimeout(30)
     .build();
 
-  const sim = await server.simulateTransaction(tx);
+  const sim = await rpcServer.simulateTransaction(tx);
   if (rpc.Api.isSimulationError(sim)) {
     throw new Error(`simulate ${method} failed: ${sim.error}`);
   }
@@ -83,15 +95,21 @@ export async function readPublic<T>(
   contractId: string,
   method: string,
   callArgs: xdr.ScVal[],
+  networkConfig?: NetworkConfig,
 ): Promise<T> {
   requireDeployed(contractId, method);
   const source = new Account(Keypair.random().publicKey(), '0');
-  const tx = new TransactionBuilder(source, { fee: BASE_FEE, networkPassphrase })
+  const rpcServer = networkConfig ? new rpc.Server(networkConfig.rpcUrl || 'https://url-not-configured.invalid', {
+    allowHttp: networkConfig.rpcUrl?.startsWith('http://') ?? false,
+  }) : server;
+  const passphrase = networkConfig?.networkPassphrase ?? networkPassphrase;
+  
+  const tx = new TransactionBuilder(source, { fee: BASE_FEE, networkPassphrase: passphrase })
     .addOperation(new Contract(contractId).call(method, ...callArgs))
     .setTimeout(30)
     .build();
 
-  const sim = await server.simulateTransaction(tx);
+  const sim = await rpcServer.simulateTransaction(tx);
   if (rpc.Api.isSimulationError(sim)) {
     throw new Error(`simulate ${method} failed: ${sim.error}`);
   }

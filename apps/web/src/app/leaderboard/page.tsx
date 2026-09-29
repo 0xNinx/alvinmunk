@@ -1,22 +1,29 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { fetchLeaderboard } from '@/lib/leaderboard';
+import { fetchLeaderboard, reverseHandles } from '@/lib';
 import { type LeaderboardEntry } from '@alvinmunk/shared';
 import { loadProfile } from '@/lib/profile';
-import { reverseHandles } from '@/lib/registry';
 import { Crest } from '@/components/brand/crest';
 import { Frame } from '@/components/fx/frame';
-import { ShareRow } from '@/components/fx/share-row';
+import { Stamp } from '@/components/fx/stamp';
 import { Skeleton } from '@/components/ui/skeleton';
-import { StateArt } from '@/components/ui/state-art';
-import { Sticker } from '@/components/ui/sticker';
+import { buttonVariants } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
+import { buildNetworkConfig } from '@/lib/stellar';
+import { useSearchParams } from 'next/navigation';
 import { useTranslations } from '@/lib/i18n';
 import { shortAddr } from '@alvinmunk/shared';
-import { cn } from '@/lib/utils';
 
 export default function LeaderboardPage() {
   const t = useTranslations();
+  const searchParams = useSearchParams();
+  const networkParam = searchParams.get('network') as 'testnet' | 'mainnet' | null;
+  const networkConfig = networkParam && (networkParam === 'testnet' || networkParam === 'mainnet')
+    ? buildNetworkConfig(networkParam)
+    : undefined;
+  const isOverride = !!networkConfig;
+  
   const [rows, setRows] = useState<LeaderboardEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [handles, setHandles] = useState<Record<string, string | null>>({});
@@ -49,7 +56,7 @@ export default function LeaderboardPage() {
     let alive = true;
     // One batched reverse_many read (lib/registry.ts) instead of N single-address
     // calls — this is what #319 already gives us for free.
-    reverseHandles(missing).then((map) => alive && setHandles((h) => ({ ...h, ...map })));
+    reverseHandles(missing, networkConfig).then((map) => alive && setHandles((h) => ({ ...h, ...map })));
 
     // We do NOT remove addresses from pendingHandles on cleanup — if the component
     // unmounts the lookup is abandoned, but a fresh mount gets a fresh ref and starts
@@ -67,7 +74,7 @@ export default function LeaderboardPage() {
         // A new `rows` array reference on every tick is fine now — the handle-lookup
         // effect above depends on `addressKey` (the stable, sorted set of addresses),
         // not on `rows` itself, so a quiet poll no longer re-triggers or cancels it.
-        const r = await fetchLeaderboard({ throwOnError: true });
+        const r = await fetchLeaderboard({ throwOnError: true, networkConfig });
         if (alive) { setRows(r); setStale(false); }
       } catch {
         if (alive) setStale(true);

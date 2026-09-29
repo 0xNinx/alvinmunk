@@ -4,9 +4,9 @@
  * pull and decode them, so the durable-indexer swap (Blue/Black, belts/00-strategy) is a
  * one-file change. RPC-direct for the MVP; degrades to [] on any failure.
  */
-import { Address, scValToNative, xdr, type rpc } from '@stellar/stellar-sdk';
+import { Address, scValToNative, xdr, rpc } from '@stellar/stellar-sdk';
 import { EVENTS } from '@alvinmunk/shared';
-import { server, config } from './stellar';
+import { server, config, type NetworkConfig } from './stellar';
 import { shareInFlight } from './utils';
 
 /**
@@ -56,8 +56,9 @@ export function decodeScVal(v: xdr.ScVal | string): unknown {
  * caller degrades gracefully. Concurrent callers (feed, constellation, badges mounting
  * together) share one scan.
  */
-export async function fetchReputationEvents(options?: { throwOnError?: boolean }): Promise<RepEvent[]> {
-  return fetchContractEvents(config.contracts.reputation, ['*', '*'], PAGE_SIZE * MAX_PAGES, options?.throwOnError);
+export async function fetchReputationEvents(options?: { throwOnError?: boolean; networkConfig?: NetworkConfig }): Promise<RepEvent[]> {
+  const contractId = options?.networkConfig ? options.networkConfig.contracts.reputation : config.contracts.reputation;
+  return fetchContractEvents(contractId, ['*', '*'], PAGE_SIZE * MAX_PAGES, options?.throwOnError, options?.networkConfig);
 }
 
 /**
@@ -96,13 +97,14 @@ export async function fetchTipsSent(from: string, limit = 1): Promise<RepEvent[]
 
 const pendingScans = new Map<string, Promise<RepEvent[]>>();
 
-function fetchContractEvents(contractId: string, topics: string[], limit: number, throwOnError?: boolean): Promise<RepEvent[]> {
+function fetchContractEvents(contractId: string, topics: string[], limit: number, throwOnError?: boolean, networkConfig?: NetworkConfig): Promise<RepEvent[]> {
   if (!contractId) {
     if (throwOnError) return Promise.reject(new Error('No contract ID'));
     return Promise.resolve([]);
   }
-  return shareInFlight(pendingScans, `${contractId}|${topics.join(',')}|${limit}|${throwOnError}`, () =>
-    scanContractEvents(contractId, topics, limit, throwOnError),
+  const cacheKey = networkConfig ? `${contractId}|${topics.join(',')}|${limit}|${throwOnError}|${networkConfig.network}` : `${contractId}|${topics.join(',')}|${limit}|${throwOnError}`;
+  return shareInFlight(pendingScans, cacheKey, () =>
+    scanContractEvents(contractId, topics, limit, throwOnError, networkConfig),
   );
 }
 
@@ -118,10 +120,14 @@ function fetchContractEvents(contractId: string, topics: string[], limit: number
  * A request failing part-way drops the whole scan to []: an oldest-only prefix would read
  * to every caller as "nothing happened since".
  */
-async function scanContractEvents(contractId: string, topics: string[], limit: number, throwOnError?: boolean): Promise<RepEvent[]> {
+async function scanContractEvents(contractId: string, topics: string[], limit: number, throwOnError?: boolean, networkConfig?: NetworkConfig): Promise<RepEvent[]> {
+  const rpcServer = networkConfig ? new rpc.Server(networkConfig.rpcUrl || 'https://url-not-configured.invalid', {
+    allowHttp: networkConfig.rpcUrl?.startsWith('http://') ?? false,
+  }) : server;
+  
   let startLedger: number;
   try {
-    const latest = await server.getLatestLedger();
+    const latest = await rpcServer.getLatestLedger();
     startLedger = Math.max(1, latest.sequence - EVENT_LEDGER_WINDOW);
   } catch (err) {
     if (throwOnError) throw err;
@@ -136,7 +142,7 @@ async function scanContractEvents(contractId: string, topics: string[], limit: n
     let cursor: string | undefined;
     for (let page = 0; page < MAX_PAGES && out.length < limit; page++) {
       const pageLimit = Math.min(PAGE_SIZE, limit - out.length);
-      const res = await server.getEvents(
+      const res = await rpcServer.getEvents(
         cursor ? { filters, cursor, limit: pageLimit } : { filters, startLedger, limit: pageLimit },
       );
       for (const ev of res.events) {

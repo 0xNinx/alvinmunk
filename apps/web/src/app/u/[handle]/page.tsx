@@ -16,6 +16,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { buttonVariants } from '@/components/ui/button';
 import { shortAddr } from '@alvinmunk/shared';
 import { cn } from '@/lib/utils';
+import { buildNetworkConfig } from '@/lib/stellar';
+import { useSearchParams } from 'next/navigation';
 
 /**
  * Public profile. The handle is resolved ON-CHAIN via the registry, so ANY claimed
@@ -24,6 +26,13 @@ import { cn } from '@/lib/utils';
  */
 export default function ProfilePage({ params }: { params: { handle: string } }) {
   const handle = params.handle.toLowerCase();
+  const searchParams = useSearchParams();
+  const networkParam = searchParams.get('network') as 'testnet' | 'mainnet' | null;
+  const networkConfig = networkParam && (networkParam === 'testnet' || networkParam === 'mainnet') 
+    ? buildNetworkConfig(networkParam) 
+    : undefined;
+  const isOverride = !!networkConfig;
+  
   const { profile } = useWallet();
   const [address, setAddress] = useState<string | null | undefined>(undefined); // undefined = loading
   const [scores, setScores] = useState<{ social: number; earned: number } | null>(null);
@@ -36,15 +45,15 @@ export default function ProfilePage({ params }: { params: { handle: string } }) 
     setScores(null);
     setPeople(null);
     setMeta(null);
-    resolveHandle(handle)
+    resolveHandle(handle, networkConfig)
       .then(async (addr) => {
         if (!alive) return;
         setAddress(addr);
         if (!addr) return;
         const [s, p, m] = await Promise.all([
-          getScores(addr).catch(() => ({ social: 0, earned: 0 })),
-          getPeopleCounts(addr).catch(() => ({ vouchedBy: 0, backed: 0 })),
-          getMeta(addr), // null (default face, no bio) when unset or the registry predates it
+          getScores(addr, networkConfig).catch(() => ({ social: 0, earned: 0 })),
+          getPeopleCounts(addr, networkConfig).catch(() => ({ vouchedBy: 0, backed: 0 })),
+          getMeta(addr, networkConfig), // null (default face, no bio) when unset or the registry predates it
         ]);
         if (!alive) return;
         setScores(s);
@@ -55,7 +64,7 @@ export default function ProfilePage({ params }: { params: { handle: string } }) 
     return () => {
       alive = false;
     };
-  }, [handle]);
+  }, [handle, networkConfig]);
 
   const isMe = !!address && profile?.address === address;
   // The published face/bio for everyone; on your own profile the local copy (updated the
@@ -109,8 +118,13 @@ export default function ProfilePage({ params }: { params: { handle: string } }) 
             <h1 className="font-display text-3xl font-semibold">@{handle}</h1>
             <p className="mt-1 font-mono text-xs text-muted-foreground">{shortAddr(address)}</p>
             {bio && <p className="mt-2 break-words text-sm text-foreground/80">{bio}</p>}
-            <div className="mt-3">
+            <div className="mt-3 flex items-center gap-2">
               <Stamp accent="secondary">✦ LIT ON STELLAR</Stamp>
+              {isOverride && (
+                <Stamp accent="primary" className="text-xs">
+                  {networkParam?.toUpperCase()} READ-ONLY
+                </Stamp>
+              )}
             </div>
           </div>
         </div>
@@ -128,9 +142,11 @@ export default function ProfilePage({ params }: { params: { handle: string } }) 
       </div>
 
       <div className="mt-5 flex flex-wrap items-center gap-3">
-        <Link href="/app" className={cn(buttonVariants({ variant: 'flow' }))}>
-          {isMe ? 'Vouch someone' : `Vouch @${handle}`}
-        </Link>
+        {!isOverride && (
+          <Link href="/app" className={cn(buttonVariants({ variant: 'flow' }))}>
+            {isMe ? 'Vouch someone' : `Vouch @${handle}`}
+          </Link>
+        )}
         <Link href="/leaderboard" className={cn(buttonVariants({ variant: 'outline' }), 'glass')}>
           Leaderboard
         </Link>

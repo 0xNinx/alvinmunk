@@ -11,7 +11,7 @@
  */
 import { Address, Keypair, hash, nativeToScVal, xdr } from '@stellar/stellar-sdk';
 import { buildClaimUrl } from '@alvinmunk/shared';
-import { invokeAndWait, readContract, readPublic, args, repId, questId } from './contracts';
+import { invokeAndWait, readContract, readPublic, args, repId, questId, type NetworkConfig } from './contracts';
 import { networkPassphrase } from './stellar';
 import { shareInFlight } from './utils';
 import type { Wallet } from './wallet';
@@ -76,12 +76,15 @@ const pendingProfiles = new Map<string, Promise<ProfileView>>();
 
 /** `get_profile(addr)` — single round-trip for social + earned + verified. Widgets that
  *  mount together (profile header + badge row, stat strip + badge row) share one read. */
-export function getProfile(address: string): Promise<ProfileView> {
-  return shareInFlight(pendingProfiles, address, async () => {
+export function getProfile(address: string, networkConfig?: NetworkConfig): Promise<ProfileView> {
+  const contractId = networkConfig ? networkConfig.contracts.reputation : repId();
+  const cacheKey = networkConfig ? `${address}|${networkConfig.network}` : address;
+  return shareInFlight(pendingProfiles, cacheKey, async () => {
     const p = await readPublic<{ social: bigint; earned: bigint; verified: boolean } | undefined>(
-      repId(),
+      contractId,
       'get_profile',
       [args.addr(address)],
+      networkConfig,
     );
     return {
       social: Number(p?.social ?? 0),
@@ -104,12 +107,14 @@ const pendingCounts = new Map<string, Promise<PeopleCounts | null>>();
  *  so older vouches are not in them. Resolves `null` when the read fails — including a
  *  deployed contract that predates the view — so callers never mistake "unknown" for 0.
  *  Concurrent callers (stat strip, hero, badge row) share one read. */
-export function getCounts(address: string): Promise<PeopleCounts | null> {
-  return shareInFlight(pendingCounts, address, async () => {
+export function getCounts(address: string, networkConfig?: NetworkConfig): Promise<PeopleCounts | null> {
+  const contractId = networkConfig ? networkConfig.contracts.reputation : repId();
+  const cacheKey = networkConfig ? `${address}|${networkConfig.network}` : address;
+  return shareInFlight(pendingCounts, cacheKey, async () => {
     try {
-      const c = await readPublic<[number, number] | undefined>(repId(), 'get_counts', [
+      const c = await readPublic<[number, number] | undefined>(contractId, 'get_counts', [
         args.addr(address),
-      ]);
+      ], networkConfig);
       if (!Array.isArray(c)) return null;
       return { vouchedBy: Number(c[0] ?? 0), backed: Number(c[1] ?? 0) };
     } catch {
@@ -302,14 +307,15 @@ export async function getPending(claimer: string): Promise<PendingBonusView[]> {
 /** Wallet-free profile aggregator — social + earned for ANY address. Prefers the
  *  single-call get_profile view; falls back to the two parallel legacy calls if
  *  the deployed contract predates get_profile. */
-export async function getScores(address: string): Promise<{ social: number; earned: number }> {
+export async function getScores(address: string, networkConfig?: NetworkConfig): Promise<{ social: number; earned: number }> {
   try {
-    const p = await getProfile(address);
+    const p = await getProfile(address, networkConfig);
     return { social: p.social, earned: p.earned };
   } catch {
+    const contractId = networkConfig ? networkConfig.contracts.reputation : repId();
     const [s, e] = await Promise.all([
-      readPublic<bigint>(repId(), 'get_score', [args.addr(address)]).catch(() => 0n),
-      readPublic<bigint>(repId(), 'get_earned', [args.addr(address)]).catch(() => 0n),
+      readPublic<bigint>(contractId, 'get_score', [args.addr(address)], networkConfig).catch(() => 0n),
+      readPublic<bigint>(contractId, 'get_earned', [args.addr(address)], networkConfig).catch(() => 0n),
     ]);
     return { social: Number(s ?? 0), earned: Number(e ?? 0) };
   }
@@ -333,11 +339,13 @@ export async function getEarnedScore(addr: string, source: string): Promise<numb
  * the ledger time of the latest one (there is no on-chain count). `null` means no quest yet;
  * a failed read throws instead of looking like "no quests".
  */
-export async function getQuestAttestation(addr: string): Promise<Attestation | null> {
+export async function getQuestAttestation(addr: string, networkConfig?: NetworkConfig): Promise<Attestation | null> {
+  const contractId = networkConfig ? networkConfig.contracts.reputation : repId();
   const a = await readPublic<{ issuer: string; value: bigint | number; timestamp: bigint | number; revoked: boolean }>(
-    repId(),
+    contractId,
     'get_attestation',
     [args.addr(addr), args.u32(SCHEMA.QUEST)],
+    networkConfig,
   );
   if (!a) return null;
   // i128 / u64 decode to bigint; normalise to the shared shape (timestamp in unix seconds).
