@@ -6,9 +6,11 @@
  * sprite texture, a sphere-distribution helper, a glowing Star, and a live OrbitRing.
  * Additive-blended glow, no postprocessing dependency.
  */
-import { useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
+
+const REDUCED_MOTION_QUERY = '(prefers-reduced-motion: reduce)';
 
 /**
  * A solid five-point star sprite texture (filled classic star + a soft glow halo),
@@ -174,9 +176,23 @@ export function useGlow(): THREE.Texture {
   return useMemo(makeGlowTexture, []);
 }
 
-export function reducedMotion(): boolean {
-  return (
-    typeof window !== 'undefined' &&
-    window.matchMedia('(prefers-reduced-motion: reduce)').matches
+/**
+ * Live `prefers-reduced-motion`. Unlike a one-shot read at mount, this subscribes to the
+ * media query, so flipping the OS setting takes effect without a reload. Shared by every
+ * constellation scene (app hero + marketing backdrop) so they all honor it the same way.
+ */
+export function usePrefersReducedMotion(): boolean {
+  const [reduced, setReduced] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia(REDUCED_MOTION_QUERY).matches,
   );
+
+  useEffect(() => {
+    const media = window.matchMedia(REDUCED_MOTION_QUERY);
+    setReduced(media.matches);
+    const onChange = (e: MediaQueryListEvent) => setReduced(e.matches);
+    media.addEventListener('change', onChange);
+    return () => media.removeEventListener('change', onChange);
+  }, []);
+
+  return reduced;
 }

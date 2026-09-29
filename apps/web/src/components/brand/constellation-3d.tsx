@@ -19,7 +19,13 @@ import {
   addrHue,
   type VoucherStar,
 } from '@/lib/constellation';
-import { Star, OrbitRing, useGlow, fibonacciSphere, reducedMotion } from './constellation-parts';
+import {
+  Star,
+  OrbitRing,
+  useGlow,
+  fibonacciSphere,
+  usePrefersReducedMotion,
+} from './constellation-parts';
 
 const RADIUS = 3.0;
 
@@ -153,7 +159,7 @@ export default function ConstellationHero3D({ address, handle }: { address: stri
   const [hoverId, setHoverId] = useState<number | null>(null);
   // A read failure must NOT look like an empty sky — they mean opposite things.
   const [loadFailed, setLoadFailed] = useState(false);
-  const reduced = reducedMotion();
+  const reduced = usePrefersReducedMotion();
 
   useEffect(() => {
     let alive = true;
