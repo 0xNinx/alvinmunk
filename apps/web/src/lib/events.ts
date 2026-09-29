@@ -77,6 +77,11 @@ export async function fetchTipEvents(options?: { throwOnError?: boolean }): Prom
  * RPC topic filters only match events with exactly as many topics as segments, so the
  * 2-segment wildcard above never sees these 3-topic events; filtering on the sender here
  * also keeps the read to one wallet's tips instead of the whole rewards contract.
+ *
+ * Since the contract validates a tip (#144) every event here has `amount > 0` and
+ * `to !== from`, so each one is a real USDC transfer out of `from` — safe to count as
+ * activity. Events from a contract deployed before that rule are not re-validated, so a
+ * historical zero/self tip can still appear; the UI reads the amount off the event.
  */
 export async function fetchTipsSent(from: string, limit = 1): Promise<RepEvent[]> {
   let sender: string;
