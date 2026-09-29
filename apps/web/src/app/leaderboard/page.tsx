@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { fetchLeaderboard } from '@/lib/leaderboard';
+import { usePoll } from '@/lib/use-poll';
 import { type LeaderboardEntry } from '@alvinmunk/shared';
 import { loadProfile } from '@/lib/profile';
 import { reverseHandles } from '@/lib/registry';
@@ -76,25 +77,25 @@ function Leaderboard({ net }: { net: ReadNetwork | null }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [addressKey]); // stable key: only re-runs when the actual set of addresses changes
 
-  useEffect(() => {
-    let alive = true;
-    const tick = async () => {
-      try {
-        // A new `rows` array reference on every tick is fine now — the handle-lookup
-        // effect above depends on `addressKey` (the stable, sorted set of addresses),
-        // not on `rows` itself, so a quiet poll no longer re-triggers or cancels it.
-        const r = await fetchLeaderboard({ throwOnError: true, net });
-        if (alive) { setRows(r); setStale(false); }
-      } catch {
-        if (alive) setStale(true);
-      } finally {
-        if (alive) setLoading(false);
-      }
-    };
-    void tick();
-    const iv = setInterval(tick, 5000);
-    return () => { alive = false; clearInterval(iv); };
-  }, [net]);
+  // Every 5s while the tab is visible, never overlapping, backing off on failures (lib/use-poll.ts).
+  // `net` is fixed for this instance: the page remounts it (keyed) when the network changes.
+  usePoll(async (signal) => {
+    try {
+      // A new `rows` array reference on every tick is fine now — the handle-lookup
+      // effect above depends on `addressKey` (the stable, sorted set of addresses),
+      // not on `rows` itself, so a quiet poll no longer re-triggers or cancels it.
+      const r = await fetchLeaderboard({ throwOnError: true, net });
+      if (signal.aborted) return;
+      setRows(r);
+      setStale(false);
+    } catch (err) {
+      if (signal.aborted) return;
+      setStale(true);
+      throw err; // so the poll backs off
+    } finally {
+      if (!signal.aborted) setLoading(false);
+    }
+  }, 5000);
 
   return (
     <div className="container max-w-2xl py-14">
@@ -169,7 +170,8 @@ function Leaderboard({ net }: { net: ReadNetwork | null }) {
               const isMe = e.address === me;
               const handle = handles[e.address];
               // Every row opens someone: their profile once a handle resolves, else their score.
-              const href = handle ? `/u/${handle}` : `/score/${e.address}`;
+              // A row on the override opens that network's profile too.
+              const href = withReadNetwork(handle ? `/u/${handle}` : `/score/${e.address}`, net);
               // The link's accessible name, e.g. "@alice, rank 3, 42 Social XP" — it replaces
               // the row's text for a screen reader, so it carries the "you" / flagged marks too.
               const label = [
