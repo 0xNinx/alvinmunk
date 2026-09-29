@@ -513,5 +513,20 @@
   "handleTransfer.submitting": "Moving…",
   "handleTransfer.done": "@{handle} now belongs to this wallet.",
   "handleTransfer.error.noHandle": "The in-app wallet no longer holds a handle — there's nothing to move.",
-  "handleTransfer.error.targetHasHandle": "This wallet already holds a handle — the move needs a wallet without one."
+  "handleTransfer.error.targetHasHandle": "This wallet already holds a handle — the move needs a wallet without one.",
+
+  "moneyFlowConfirm.tipTitle": "Confirm tip",
+  "moneyFlowConfirm.claimTitle": "Confirm claim",
+  "moneyFlowConfirm.tipSubtitle": "You're about to send real USDC on mainnet.",
+  "moneyFlowConfirm.claimSubtitle": "You're about to claim real USDC on mainnet.",
+  "moneyFlowConfirm.to": "To",
+  "moneyFlowConfirm.claimTo": "Paid to your wallet",
+  "moneyFlowConfirm.noHandle": "No @handle — check the address",
+  "moneyFlowConfirm.realMoneyWarning": "This is real money and can't be reversed.",
+  "moneyFlowConfirm.firstTipCheckbox": "I understand this is real money and can't be reversed.",
+  "moneyFlowConfirm.sendingIn": "Sending in {seconds}s — undo to cancel.",
+  "moneyFlowConfirm.undo": "Undo",
+  "moneyFlowConfirm.cancel": "Cancel",
+  "moneyFlowConfirm.confirmTip": "Confirm tip",
+  "moneyFlowConfirm.confirmClaim": "Confirm claim"
 }
