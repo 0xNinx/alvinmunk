@@ -14,17 +14,15 @@ import {
   Keypair,
   Operation,
   TransactionBuilder,
-  nativeToScVal,
   scValToNative,
   rpc,
   xdr,
   type Transaction,
 } from '@stellar/stellar-sdk';
-import { server, networkPassphrase, config, buildNetworkConfig, type NetworkConfig as StellarNetworkConfig } from './stellar';
+import { simulateRead } from '@alvinmunk/sdk';
+import { server, networkPassphrase, config } from './stellar';
 import { submitSigned } from './submit';
 import type { Wallet } from './wallet';
-
-export type NetworkConfig = StellarNetworkConfig;
 
 const BASE_FEE = '1000000'; // 0.1 XLM ceiling; simulation sets the real fee.
 
@@ -34,22 +32,8 @@ export const questId = () => config.contracts.questRegistry;
 export const registryId = () => config.contracts.registry;
 export const gateId = () => config.contracts.gate;
 
-/** Get contract ID from a specific network config (for network override). */
-export const contractId = (cfg: NetworkConfig, key: keyof NetworkConfig['contracts']) => cfg.contracts[key];
-
-/** ScVal builders for the contract ABIs. */
-export const args = {
-  addr: (g: string) => new Address(g).toScVal(),
-  addrs: (gs: string[]) => xdr.ScVal.scvVec(gs.map((g) => new Address(g).toScVal())),
-  u32: (n: number) => nativeToScVal(n, { type: 'u32' }),
-  u64: (n: number | bigint) => nativeToScVal(n, { type: 'u64' }),
-  i128: (n: bigint) => nativeToScVal(n, { type: 'i128' }),
-  bool: (b: boolean) => xdr.ScVal.scvBool(b),
-  str: (s: string) => nativeToScVal(s, { type: 'string' }),
-  sym: (s: string) => nativeToScVal(s, { type: 'symbol' }),
-  // Bytes / BytesN<32> (claim hash, secret) — the host checks fixed length where needed.
-  bytes: (u8: Uint8Array) => nativeToScVal(u8, { type: 'bytes' }),
-};
+/** ScVal builders for the contract ABIs — `@alvinmunk/sdk`'s, so the app and the SDK encode alike. */
+export { args } from '@alvinmunk/sdk';
 
 /** Read-only call via simulation (no signature, no fee). */
 export async function readContract<T>(
@@ -57,64 +41,30 @@ export async function readContract<T>(
   method: string,
   callArgs: xdr.ScVal[],
   sourceAccount: string,
-  networkConfig?: NetworkConfig,
 ): Promise<T> {
   requireDeployed(contractId, method);
   // Read-only simulation needs only a well-formed source envelope, not a real on-chain
   // account. A passkey wallet's address is a CONTRACT (C…), which isn't a classic account
   // (`getAccount(C…)` 404s), so synthesize a throwaway source for it; any G… source is used
   // directly to keep behavior unchanged.
-  const rpcServer = networkConfig ? new rpc.Server(networkConfig.rpcUrl || 'https://url-not-configured.invalid', {
-    allowHttp: networkConfig.rpcUrl?.startsWith('http://') ?? false,
-  }) : server;
-  const passphrase = networkConfig?.networkPassphrase ?? networkPassphrase;
-  
   const account = sourceAccount.startsWith('C')
     ? new Account(Keypair.random().publicKey(), '0')
-    : await rpcServer.getAccount(sourceAccount);
-  
-  const tx = new TransactionBuilder(account, { fee: BASE_FEE, networkPassphrase: passphrase })
-    .addOperation(new Contract(contractId).call(method, ...callArgs))
-    .setTimeout(30)
-    .build();
-
-  const sim = await rpcServer.simulateTransaction(tx);
-  if (rpc.Api.isSimulationError(sim)) {
-    throw new Error(`simulate ${method} failed: ${sim.error}`);
-  }
-  const retval = sim.result?.retval;
-  return retval ? (scValToNative(retval) as T) : (undefined as T);
+    : await server.getAccount(sourceAccount);
+  return simulateRead<T>(server, networkPassphrase, contractId, method, callArgs, account);
 }
 
 /**
  * Read-only simulation with NO wallet — for logged-out pages (e.g. the claim funnel).
  * A read getter has no auth and no fee, so the source account need not exist on-chain;
- * we use a throwaway key purely to form a valid envelope for `simulateTransaction`.
+ * `simulateRead` uses a throwaway key purely to form a valid envelope.
  */
 export async function readPublic<T>(
   contractId: string,
   method: string,
   callArgs: xdr.ScVal[],
-  networkConfig?: NetworkConfig,
 ): Promise<T> {
   requireDeployed(contractId, method);
-  const source = new Account(Keypair.random().publicKey(), '0');
-  const rpcServer = networkConfig ? new rpc.Server(networkConfig.rpcUrl || 'https://url-not-configured.invalid', {
-    allowHttp: networkConfig.rpcUrl?.startsWith('http://') ?? false,
-  }) : server;
-  const passphrase = networkConfig?.networkPassphrase ?? networkPassphrase;
-  
-  const tx = new TransactionBuilder(source, { fee: BASE_FEE, networkPassphrase: passphrase })
-    .addOperation(new Contract(contractId).call(method, ...callArgs))
-    .setTimeout(30)
-    .build();
-
-  const sim = await rpcServer.simulateTransaction(tx);
-  if (rpc.Api.isSimulationError(sim)) {
-    throw new Error(`simulate ${method} failed: ${sim.error}`);
-  }
-  const retval = sim.result?.retval;
-  return retval ? (scValToNative(retval) as T) : (undefined as T);
+  return simulateRead<T>(server, networkPassphrase, contractId, method, callArgs);
 }
 
 /** A confirmed state-changing call: its transaction hash and decoded return value. */

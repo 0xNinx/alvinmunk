@@ -3,20 +3,20 @@
  * shareable identity that resolves for ANY wallet (not just the logged-in user).
  * Validate/normalize the handle with normalizeHandle() BEFORE calling claim.
  */
-import { invokeAndWait, invokeCosigned, readPublic, args, registryId, type NetworkConfig } from './contracts';
+import { isMissingFunction } from '@alvinmunk/sdk';
+import { invokeAndWait, invokeCosigned, readPublic, args, registryId } from './contracts';
+import { readClient } from './sdk';
 import type { Wallet } from './wallet';
 import { encodeAvatar, decodeAvatar, type AvatarConfig } from './avatar';
 import { sanitizeBio } from './profile';
 import { shareInFlight } from './utils';
 
 /** Resolve `@handle` → address (public, wallet-free). null if unclaimed/unconfigured. */
-export async function resolveHandle(handle: string, networkConfig?: NetworkConfig): Promise<string | null> {
-  const contractId = networkConfig ? networkConfig.contracts.registry : registryId();
-  if (!contractId || !handle) return null;
-  const v = await readPublic<string | null>(contractId, 'resolve', [args.sym(handle)], networkConfig).catch(
-    () => null,
-  );
-  return v ?? null;
+export async function resolveHandle(handle: string): Promise<string | null> {
+  if (!registryId() || !handle) return null;
+  return readClient()
+    .resolveHandle(handle)
+    .catch(() => null);
 }
 
 /**
@@ -26,13 +26,11 @@ export async function resolveHandle(handle: string, networkConfig?: NetworkConfi
  */
 export async function reverseHandle(
   address: string,
-  { strict = false, networkConfig }: { strict?: boolean; networkConfig?: NetworkConfig } = {},
+  { strict = false }: { strict?: boolean } = {},
 ): Promise<string | null> {
-  const contractId = networkConfig ? networkConfig.contracts.registry : registryId();
-  if (!contractId || !address) return null;
-  const read = readPublic<string | null>(contractId, 'reverse', [args.addr(address)], networkConfig);
-  const v = await (strict ? read : read.catch(() => null));
-  return v ?? null;
+  if (!registryId() || !address) return null;
+  const read = readClient().reverseHandle(address);
+  return strict ? read : read.catch(() => null);
 }
 
 /** Most addresses per `reverse_many` call; mirrors `REVERSE_MANY_CAP` in the contract. */
@@ -46,11 +44,10 @@ const pendingReverse = new Map<string, Promise<(string | null)[]>>();
  * input address gets an entry (null = no handle, or it couldn't be read), so a caller that
  * merges the result into its label map never asks again for the same address.
  */
-export async function reverseHandles(addresses: string[], networkConfig?: NetworkConfig): Promise<Record<string, string | null>> {
+export async function reverseHandles(addresses: string[]): Promise<Record<string, string | null>> {
   const unique = [...new Set(addresses)];
   const out: Record<string, string | null> = Object.fromEntries(unique.map((a) => [a, null]));
-  const contractId = networkConfig ? networkConfig.contracts.registry : registryId();
-  if (!contractId) return out;
+  if (!registryId()) return out;
   // sorted, so a re-render that reorders the same rows asks for the same chunks
   const todo = unique.filter(Boolean).sort();
   const chunks: string[][] = [];
@@ -59,7 +56,7 @@ export async function reverseHandles(addresses: string[], networkConfig?: Networ
   }
   await Promise.all(
     chunks.map(async (chunk) => {
-      const handles = await reverseChunk(chunk, contractId, networkConfig);
+      const handles = await reverseChunk(chunk);
       for (let i = 0; i < chunk.length; i++) out[chunk[i]] = handles[i];
     }),
   );
@@ -71,15 +68,15 @@ export async function reverseHandles(addresses: string[], networkConfig?: Networ
  * mid-read shares it. A registry that predates the view gets one `reverse` per address
  * instead; any other failure leaves the chunk unlabelled, as a failed `reverseHandle` would.
  */
-function reverseChunk(chunk: string[], contractId: string, networkConfig?: NetworkConfig): Promise<(string | null)[]> {
+function reverseChunk(chunk: string[]): Promise<(string | null)[]> {
   return shareInFlight(pendingReverse, chunk.join(','), async () => {
     try {
-      const v = await readPublic<unknown>(contractId, 'reverse_many', [args.addrs(chunk)], networkConfig);
+      const v = await readPublic<unknown>(registryId(), 'reverse_many', [args.addrs(chunk)]);
       if (!Array.isArray(v) || v.length !== chunk.length) return chunk.map(() => null);
       return v.map((h) => (typeof h === 'string' ? h : null));
     } catch (e) {
       if (!isMissingFunction(e)) return chunk.map(() => null);
-      return Promise.all(chunk.map((a) => reverseHandle(a, { networkConfig }).catch(() => null)));
+      return Promise.all(chunk.map((a) => reverseHandle(a).catch(() => null)));
     }
   });
 }
@@ -96,14 +93,12 @@ export interface HandleCooldown {
  * The cooldown `handle` is in, or null: none running, the registry isn't configured, or it
  * predates cooldowns (nothing is reserved there, so null is the true answer too).
  */
-export async function getHandleCooldown(handle: string, networkConfig?: NetworkConfig): Promise<HandleCooldown | null> {
-  const contractId = networkConfig ? networkConfig.contracts.registry : registryId();
-  if (!contractId || !handle) return null;
+export async function getHandleCooldown(handle: string): Promise<HandleCooldown | null> {
+  if (!registryId() || !handle) return null;
   const raw = await readPublic<{ prev_owner?: unknown; until?: unknown } | null>(
-    contractId,
+    registryId(),
     'cooldown',
     [args.sym(handle)],
-    networkConfig,
   ).catch(() => null);
   if (!raw || typeof raw.prev_owner !== 'string' || typeof raw.until !== 'bigint') return null;
   return { prevOwner: raw.prev_owner, until: new Date(Number(raw.until) * 1000) };
@@ -123,10 +118,13 @@ export type HandleAvailability =
 export async function handleAvailability(
   handle: string,
   address?: string,
-  networkConfig?: NetworkConfig,
 ): Promise<HandleAvailability> {
-  const [owner, cooldown] = await Promise.all([resolveHandle(handle, networkConfig), getHandleCooldown(handle, networkConfig)]);
-  if (owner !== null) return { status: 'taken' };
+  const [owner, cooldown] = await Promise.all([resolveHandle(handle), getHandleCooldown(handle)]);
+  if (owner !== null) {
+    // If the handle is owned by the checking address, it's available for them to reclaim
+    if (owner === address) return { status: 'free' };
+    return { status: 'taken' };
+  }
   if (cooldown && cooldown.prevOwner !== address) {
     return { status: 'reserved', until: cooldown.until };
   }
@@ -134,8 +132,8 @@ export async function handleAvailability(
 }
 
 /** Is this handle free for `address` (anyone, when omitted) to claim? */
-export async function isHandleAvailable(handle: string, address?: string, networkConfig?: NetworkConfig): Promise<boolean> {
-  return (await handleAvailability(handle, address, networkConfig)).status === 'free';
+export async function isHandleAvailable(handle: string, address?: string): Promise<boolean> {
+  return (await handleAvailability(handle, address)).status === 'free';
 }
 
 /** Claim `@handle` on-chain (first-come; renames if the wallet already holds one). */
@@ -182,12 +180,6 @@ export interface OnChainMeta {
   /** undefined when the stored face is one this build can't render → show the default. */
   avatar: AvatarConfig | undefined;
   bio: string;
-}
-
-/** True when the error says the deployed registry has no such function (it predates it). */
-function isMissingFunction(e: unknown): boolean {
-  const msg = e instanceof Error ? e.message : String(e ?? '');
-  return /Error\(WasmVm, MissingValue\)|non-existent contract function/.test(msg);
 }
 
 /**
@@ -240,17 +232,15 @@ export function clearMetaCache(): void {
  * registry isn't configured, or the deployed registry predates `get_meta` — every caller
  * then renders the deterministic default face, exactly as before profiles existed.
  */
-export function getMeta(address: string, networkConfig?: NetworkConfig): Promise<OnChainMeta | null> {
-  const contractId = networkConfig ? networkConfig.contracts.registry : registryId();
-  if (!contractId || !address) return Promise.resolve(null);
-  const cacheKey = networkConfig ? `${address}|${networkConfig.network}` : address;
-  const hit = metaCache.get(cacheKey);
+export function getMeta(address: string): Promise<OnChainMeta | null> {
+  if (!registryId() || !address) return Promise.resolve(null);
+  const hit = metaCache.get(address);
   if (hit && Date.now() - hit.at < META_TTL_MS) return hit.value;
   const value = Promise.resolve()
     .then(() =>
-      readPublic<{ avatar?: unknown; bio?: unknown } | null>(contractId, 'get_meta', [
+      readPublic<{ avatar?: unknown; bio?: unknown } | null>(registryId(), 'get_meta', [
         args.addr(address),
-      ], networkConfig),
+      ]),
     )
     .then((raw) =>
       raw && typeof raw === 'object'
@@ -261,6 +251,6 @@ export function getMeta(address: string, networkConfig?: NetworkConfig): Promise
         : null,
     )
     .catch(() => null);
-  remember(cacheKey, value);
+  remember(address, value);
   return value;
 }
