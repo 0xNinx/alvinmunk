@@ -13,14 +13,14 @@ This is the step-by-step for taking the five Soroban contracts from testnet to *
 - [ ] End-to-end integration test exists: `scripts/e2e-testnet.mjs` (deploy → invoke vouch/quest/tip/reward → assert state, happy + negative paths). (Blocked by #53)
 - [ ] Storage/TTL: every contract bumps TTL on long-lived keys (`BUMP_THRESHOLD`/`BUMP_EXTEND`); daily counters use temporary storage that auto-GCs. Re-profile before deploy with `scripts/bump-ttl.sh`. (Blocked by #65, #66, #67)
 - [ ] Re-review every `require_auth`: `mint_vouch_signed` / `mint_vouch`(from), `claim_vouch_signed`(claimer + ed25519 claim-key sig), `claim_vouch`(claimer), `award_quest`(recipient + ed25519 sig), `tip`/`claim_reward`(from/to), all admin setters. Confirm no sensitive op is unauthenticated.
-- [x] Cross-contract calls are read-only where they should be (`rewards`→`get_earned`, `gate`→`get_score/get_earned`) and write only via the allowlisted attester (`quest_registry`→`award_xp`).
+- [x] Cross-contract calls are read-only where they should be (`rewards`→`get_earned` [rewards/src/lib.rs:371](https://github.com/0xNinx/alvinmunk/blob/main/contracts/rewards/src/lib.rs#L371), `gate`→`get_score/get_earned` [gate/src/lib.rs:316-322](https://github.com/0xNinx/alvinmunk/blob/main/contracts/gate/src/lib.rs#L316-L322)) and write only via the allowlisted attester (`quest_registry`→`award_xp` [quest_registry/src/lib.rs:344-347](https://github.com/0xNinx/alvinmunk/blob/main/contracts/quest_registry/src/lib.rs#L344-L347)).
 
 **Security**
 - [ ] Grep for `unwrap()` on user-controlled paths; prefer `?` + typed errors. (Storage `get().unwrap()` on admin-set instance keys is acceptable; document each.)
 - [ ] Confirm no panic on malformed input (fuzz already covers the XP math and payout).
-- [x] Integer math: XP uses `u64`, USDC uses `i128`; payout paths use registered amounts (caller can never set the amount). Re-check for any raw `+`/`-` that should be `checked_*`.
-- [x] Admin ops gated by `Admin.require_auth()` on all five contracts.
-- [x] USDC handled via the Stellar Asset Contract (SAC) `token::Client`, not a custom token.
+- [x] Integer math: XP uses `u64` [reputation/src/lib.rs:336](https://github.com/0xNinx/alvinmunk/blob/main/contracts/reputation/src/lib.rs#L336), USDC uses `i128` [rewards/src/lib.rs:368](https://github.com/0xNinx/alvinmunk/blob/main/contracts/rewards/src/lib.rs#L368); payout paths use registered amounts (caller can never set the amount). Re-check for any raw `+`/`-` that should be `checked_*`.
+- [x] Admin ops gated by `Admin.require_auth()` on all five contracts. See `upgrade` in [reputation/src/lib.rs:174](https://github.com/0xNinx/alvinmunk/blob/main/contracts/reputation/src/lib.rs#L174), [quest_registry/src/lib.rs:129](https://github.com/0xNinx/alvinmunk/blob/main/contracts/quest_registry/src/lib.rs#L129), [rewards/src/lib.rs:140](https://github.com/0xNinx/alvinmunk/blob/main/contracts/rewards/src/lib.rs#L140), [registry/src/lib.rs:132](https://github.com/0xNinx/alvinmunk/blob/main/contracts/registry/src/lib.rs#L132), [gate/src/lib.rs:119](https://github.com/0xNinx/alvinmunk/blob/main/contracts/gate/src/lib.rs#L119).
+- [x] USDC handled via the Stellar Asset Contract (SAC) `token::Client` [rewards/src/lib.rs:2](https://github.com/0xNinx/alvinmunk/blob/main/contracts/rewards/src/lib.rs#L2), not a custom token.
 
 **Security review (mandatory for Black — pick one)**
 - [ ] Third-party audit, OR
@@ -29,8 +29,8 @@ This is the step-by-step for taking the five Soroban contracts from testnet to *
 
 **Operational**
 - [ ] Admin + attester keys generated fresh for mainnet and held in a **hardware wallet**, never in CI secrets or `.env`.
-- [x] Upgrade path: all five contracts expose admin-gated `upgrade(new_wasm_hash)`.
-- [x] Emergency controls: `rewards.set_paused`, `set_daily_cap`, `set_frozen`, `set_require_funding` (turn proof-of-funding ON for mainnet).
+- [x] Upgrade path: all five contracts expose admin-gated `upgrade(new_wasm_hash)`. See [reputation/src/lib.rs:174](https://github.com/0xNinx/alvinmunk/blob/main/contracts/reputation/src/lib.rs#L174), [quest_registry/src/lib.rs:129](https://github.com/0xNinx/alvinmunk/blob/main/contracts/quest_registry/src/lib.rs#L129), [rewards/src/lib.rs:140](https://github.com/0xNinx/alvinmunk/blob/main/contracts/rewards/src/lib.rs#L140), [registry/src/lib.rs:132](https://github.com/0xNinx/alvinmunk/blob/main/contracts/registry/src/lib.rs#L132), [gate/src/lib.rs:119](https://github.com/0xNinx/alvinmunk/blob/main/contracts/gate/src/lib.rs#L119).
+- [x] Emergency controls: `rewards.set_paused`, `set_daily_cap`, `set_frozen`, `set_require_funding` (turn proof-of-funding ON for mainnet). See [rewards/src/lib.rs](https://github.com/0xNinx/alvinmunk/blob/main/contracts/rewards/src/lib.rs) for implementations.
 - [ ] Write a 1-page deploy SOP: who can deploy, key custody, contract-id location.
 
 ---
