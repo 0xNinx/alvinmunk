@@ -8,7 +8,8 @@ import { User, Copy, LogOut, ChevronDown } from 'lucide-react';
 import { useWallet } from './wallet-provider';
 import { Crest } from '@/components/brand/crest';
 import { buttonVariants } from '@/components/ui/button';
-import { cn, shortAddress } from '@/lib/utils';
+import { shortAddr } from '@alvinmunk/shared';
+import { cn } from '@/lib/utils';
 
 /** Anything the account menu can hand focus to. */
 type MenuItem = HTMLAnchorElement | HTMLButtonElement;
@@ -221,7 +222,7 @@ export function ConnectButton() {
       {open && (
         <div className="absolute right-0 z-50 mt-2 w-60 rounded-xl border border-border bg-popover p-1.5 shadow-card">
           <div className="px-3 py-2">
-            <p className="font-mono text-xs text-muted-foreground">{shortAddress(profile.address)}</p>
+            <p className="font-mono text-xs text-muted-foreground">{shortAddr(profile.address)}</p>
             {balance != null && (
               <p className="mt-0.5 text-xs text-muted-foreground">{Number(balance).toFixed(1)} XLM</p>
             )}
