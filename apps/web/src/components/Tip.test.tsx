@@ -27,7 +27,10 @@ vi.mock('@/components/fx/number-ticker', () => ({
   NumberTicker: ({ value }: { value: number }) => <span>{value}</span>,
 }));
 
-import { TIP_ERRORS, Tip } from './Tip';
+import { buildTipErrors, Tip } from './Tip';
+
+// The code → message map; an identity `t` keeps the keys (the copy itself is locale-bound).
+const TIP_ERRORS = buildTipErrors((key) => key);
 
 // This vitest setup compiles JSX to `React.createElement`; give the component a global React.
 (globalThis as { React?: typeof React }).React = React;
