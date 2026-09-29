@@ -9,9 +9,9 @@ This is the step-by-step for taking the five Soroban contracts from testnet to *
 ## Gate 1 — Pre-deployment verification (do not skip a box)
 
 **Contract correctness**
-- [x] Full test suite green: 57 contract tests (`cargo test`) incl. property/fuzz, + 77 web/shared. CI green on every push.
-- [x] End-to-end integration test exists: `scripts/e2e-testnet.mjs` (deploy → invoke vouch/quest/tip/reward → assert state, happy + negative paths).
-- [x] Storage/TTL: every contract bumps TTL on long-lived keys (`BUMP_THRESHOLD`/`BUMP_EXTEND`); daily counters use temporary storage that auto-GCs. Re-profile before deploy with `scripts/bump-ttl.sh`.
+- [ ] Full test suite green: 57 contract tests (`cargo test`) incl. property/fuzz, + 77 web/shared. CI green on every push. (Blocked by #53)
+- [ ] End-to-end integration test exists: `scripts/e2e-testnet.mjs` (deploy → invoke vouch/quest/tip/reward → assert state, happy + negative paths). (Blocked by #53)
+- [ ] Storage/TTL: every contract bumps TTL on long-lived keys (`BUMP_THRESHOLD`/`BUMP_EXTEND`); daily counters use temporary storage that auto-GCs. Re-profile before deploy with `scripts/bump-ttl.sh`. (Blocked by #65, #66, #67)
 - [ ] Re-review every `require_auth`: `mint_vouch_signed` / `mint_vouch`(from), `claim_vouch_signed`(claimer + ed25519 claim-key sig), `claim_vouch`(claimer), `award_quest`(recipient + ed25519 sig), `tip`/`claim_reward`(from/to), all admin setters. Confirm no sensitive op is unauthenticated.
 - [x] Cross-contract calls are read-only where they should be (`rewards`→`get_earned`, `gate`→`get_score/get_earned`) and write only via the allowlisted attester (`quest_registry`→`award_xp`).
 
@@ -126,7 +126,7 @@ Needs `stellar` (with `strkey decode`), `jq` and `git`. Offline tests for the ga
 - [ ] Smoke-test onboarding + one vouch on the live mainnet app.
 
 **Monitoring**
-- [x] Product analytics + error tracking already wired (Vercel Analytics + Speed Insights; `lib/track.ts` custom events require a Pro plan and are no-ops on Hobby). Add Vercel alerts on error-rate spikes; per-user funnel/retention analytics needs a dedicated product-analytics tool (e.g. PostHog — a separate future feature).
+- [ ] Product analytics + error tracking: Vercel Analytics + Speed Insights are wired (`lib/track.ts` custom events require a Pro plan and are no-ops on Hobby). Add Vercel alerts on error-rate spikes; per-user funnel/retention analytics needs a dedicated product-analytics tool (e.g. PostHog — a separate future feature).
 - [ ] Add contract-event monitoring (RPC `getEvents` cron, or Mercury/Subquery) alerting on: admin ops, `set_paused`, large `reward`/`tipped` amounts.
 - [ ] A simple metrics page (TVL paid, users, vouch loops/week) — even a Notion/Streamlit board.
 
