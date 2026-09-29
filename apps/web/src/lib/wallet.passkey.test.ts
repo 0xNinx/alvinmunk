@@ -50,6 +50,7 @@ vi.mock('passkey-kit', () => ({
 }));
 
 vi.mock('./stellar', () => ({
+  assertNetworkConfig: () => {},
   config: { rpcUrl: 'https://rpc.test', network: 'testnet' },
   networkPassphrase: 'Test SDF Network ; September 2015',
   waitForAccountReady: vi.fn(),

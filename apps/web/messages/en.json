@@ -292,5 +292,7 @@
   "people.suggest.mutual.other": "{count} people you know vouched for them",
   "people.suggest.footnote": "Suggestions are based on recent on-chain vouch activity — updated as new vouches are claimed.",
   "people.suggest.view": "View",
-  "people.suggest.viewAria": "View {label}'s profile"
+  "people.suggest.viewAria": "View {label}'s profile",
+
+  "configBanner.title": "This deployment is misconfigured — nothing can be sent until it is fixed."
 }
