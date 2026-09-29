@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { fetchLeaderboard } from '@/lib/leaderboard';
+import { usePoll } from '@/lib/use-poll';
 import { type LeaderboardEntry } from '@alvinmunk/shared';
 import { loadProfile } from '@/lib/profile';
 import { reverseHandles } from '@/lib/registry';
@@ -62,25 +63,24 @@ export default function LeaderboardPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [addressKey]); // stable key: only re-runs when the actual set of addresses changes
 
-  useEffect(() => {
-    let alive = true;
-    const tick = async () => {
-      try {
-        // A new `rows` array reference on every tick is fine now — the handle-lookup
-        // effect above depends on `addressKey` (the stable, sorted set of addresses),
-        // not on `rows` itself, so a quiet poll no longer re-triggers or cancels it.
-        const r = await fetchLeaderboard({ throwOnError: true });
-        if (alive) { setRows(r); setStale(false); }
-      } catch {
-        if (alive) setStale(true);
-      } finally {
-        if (alive) setLoading(false);
-      }
-    };
-    void tick();
-    const iv = setInterval(tick, 5000);
-    return () => { alive = false; clearInterval(iv); };
-  }, []);
+  // Every 5s while the tab is visible, never overlapping, backing off on failures (lib/use-poll.ts).
+  usePoll(async (signal) => {
+    try {
+      // A new `rows` array reference on every tick is fine now — the handle-lookup
+      // effect above depends on `addressKey` (the stable, sorted set of addresses),
+      // not on `rows` itself, so a quiet poll no longer re-triggers or cancels it.
+      const r = await fetchLeaderboard({ throwOnError: true });
+      if (signal.aborted) return;
+      setRows(r);
+      setStale(false);
+    } catch (err) {
+      if (signal.aborted) return;
+      setStale(true);
+      throw err; // so the poll backs off
+    } finally {
+      if (!signal.aborted) setLoading(false);
+    }
+  }, 5000);
 
   return (
     <div className="container max-w-2xl py-14">
