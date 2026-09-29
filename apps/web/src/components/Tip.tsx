@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useState } from 'react';
 import { getWallet } from '@/lib/wallet';
-import { txExplorerUrl, config } from '@/lib/stellar';
+import { txExplorerUrl } from '@/lib/stellar';
 import {
   enableUsdc,
   getUsdcBalance,
@@ -22,12 +22,17 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { StateArt } from '@/components/ui/state-art';
 import { Avatar } from '@/components/Avatar';
-import { MoneyFlowConfirm } from '@/components/MoneyFlowConfirm';
 import { isStellarAddress, shortAddr } from '@alvinmunk/shared';
 import { withTimeout, humanizeError } from '@/lib/utils';
 import { toast } from '@/components/ui/toaster';
 import { useTranslations } from '@/lib/i18n';
-import { getItem, setItem } from '@/lib/storage';
+import {
+  MoneyFlowConfirm,
+  hasTippedOnMainnet,
+  isRealMoney,
+  rememberMainnetTip,
+  type MoneyConfirmRequest,
+} from '@/components/MoneyFlowConfirm';
 
 // Rewards contract error codes that can surface on tip (mirrors contracts/rewards Error enum).
 // An insufficient-USDC failure (the SAC's own error) is caught by humanizeError directly.
@@ -65,17 +70,9 @@ export function Tip({ address }: { address: string }) {
   const [busy, setBusy] = useState<null | 'enable' | 'faucet' | 'tip'>(null);
   const [hash, setHash] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [showConfirm, setShowConfirm] = useState(false);
-  const [isFirstMainnetTip, setIsFirstMainnetTip] = useState(false);
-  const isMainnet = config.network === 'mainnet';
-
-  // Check if this is the first mainnet tip on this device
-  useEffect(() => {
-    if (isMainnet) {
-      const hasTippedBefore = getItem('alvinmunk_has_tipped_mainnet');
-      setIsFirstMainnetTip(!hasTippedBefore);
-    }
-  }, [isMainnet]);
+  // A mainnet tip waiting on its confirmation (#291), with the amount exactly as typed.
+  const [pending, setPending] = useState<{ request: MoneyConfirmRequest; amount: string } | null>(null);
+  const [firstMainnetTip, setFirstMainnetTip] = useState(false);
 
   const refresh = useCallback(() => {
     // Timeout the gating reads so a slow Horizon/RPC degrades to a usable state instead
@@ -139,11 +136,6 @@ export function Tip({ address }: { address: string }) {
             ? t('tip.toast.faucet')
             : t('tip.toast.enable'),
       );
-      // Mark that user has tipped on mainnet
-      if (kind === 'tip' && isMainnet) {
-        setItem('alvinmunk_has_tipped_mainnet', 'true');
-        setIsFirstMainnetTip(false);
-      }
       refresh();
     } catch (e) {
       const msg = humanizeError(e, buildTipErrors(t), 'tip');
@@ -154,33 +146,55 @@ export function Tip({ address }: { address: string }) {
     }
   }
 
-  const handleTipClick = () => {
-    if (isMainnet) {
-      setShowConfirm(true);
-    } else {
-      // Testnet: proceed directly
-      run('tip', async () => {
-        const wallet = await getWallet();
-        const check = validateTip({ to: resolved!, amount }, wallet.address);
-        if (!check.ok) {
-          throw new Error(resolved === wallet.address ? t('tip.error.ownWallet') : check.error);
-        }
-        await tip(wallet, resolved!, check.value);
-      });
-    }
-  };
-
-  const handleConfirmTip = () => {
-    setShowConfirm(false);
-    run('tip', async () => {
+  /** Sign and send: the only path to the wallet prompt. */
+  function sendTip(to: string, amountInput: string) {
+    return run('tip', async () => {
       const wallet = await getWallet();
-      const check = validateTip({ to: resolved!, amount }, wallet.address);
+      // The contract's own two checks (#144), run here first so a tip that could only
+      // revert never costs a fee.
+      const check = validateTip({ to, amount: amountInput }, wallet.address);
       if (!check.ok) {
-        throw new Error(resolved === wallet.address ? t('tip.error.ownWallet') : check.error);
+        throw new Error(to === wallet.address ? t('tip.error.ownWallet') : check.error);
       }
-      await tip(wallet, resolved!, check.value);
+      await tip(wallet, to, check.value);
+      if (isRealMoney()) {
+        rememberMainnetTip();
+        setFirstMainnetTip(false);
+      }
     });
-  };
+  }
+
+  function onSend() {
+    // `resolved` is guaranteed a valid key here (the button is gated on it).
+    if (!resolved) return;
+    // Testnet: one click, as before.
+    if (!isRealMoney()) {
+      void sendTip(resolved, amount);
+      return;
+    }
+    // Mainnet: never ask to confirm a tip that could only revert.
+    const check = validateTip({ to: resolved, amount }, address);
+    if (!check.ok) {
+      const msg = resolved === address ? t('tip.error.ownWallet') : check.error;
+      setError(msg);
+      toast.error(msg);
+      return;
+    }
+    const raw = to.trim();
+    setError(null);
+    setFirstMainnetTip(!hasTippedOnMainnet());
+    // A snapshot: the dialog shows, and the tip sends, exactly this — later edits to the
+    // form can't change what was confirmed.
+    setPending({
+      request: {
+        kind: 'tip',
+        to: resolved,
+        handle: isStellarAddress(raw) ? null : normalizeHandle(raw.replace(/^@/, '')),
+        amount: stroopsToUsdc(check.value),
+      },
+      amount,
+    });
+  }
 
   return (
     <Frame label={t('tip.frame')} index="03">
@@ -247,8 +261,8 @@ export function Tip({ address }: { address: string }) {
                 className="w-24"
               />
               <Button
-                onClick={handleTipClick}
-                disabled={busy !== null || resolving || !resolved || !isValidAmount(amount)}
+                onClick={onSend}
+                disabled={busy !== null || pending !== null || resolving || !resolved || !isValidAmount(amount)}
                 className="flex-1"
               >
                 {busy === 'tip' ? t('tip.sending') : t('tip.send')}
@@ -273,17 +287,17 @@ export function Tip({ address }: { address: string }) {
         {error && <p className="mt-2 text-sm text-destructive">{error}</p>}
       </div>
 
-      <MoneyFlowConfirm
-        open={showConfirm}
-        onClose={() => setShowConfirm(false)}
-        onConfirm={handleConfirmTip}
-        type="tip"
-        recipientAddress={resolved || undefined}
-        recipientHandle={!isStellarAddress(to.trim()) ? to.trim() : undefined}
-        amount={amount}
-        showUndo={!isFirstMainnetTip}
-        isFirstMainnetTip={isFirstMainnetTip}
-      />
+      {pending && (
+        <MoneyFlowConfirm
+          request={pending.request}
+          requireAck={firstMainnetTip}
+          onCancel={() => setPending(null)}
+          onConfirm={() => {
+            setPending(null);
+            void sendTip(pending.request.to, pending.amount);
+          }}
+        />
+      )}
     </Frame>
   );
 }

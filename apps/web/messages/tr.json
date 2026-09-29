@@ -513,14 +513,17 @@
   "handleTransfer.error.targetHasHandle": "Bu cüzdanın zaten bir kullanıcı adı var — taşıma için kullanıcı adı olmayan bir cüzdan gerekir.",
 
   "moneyFlowConfirm.tipTitle": "Bahşişi onayla",
-  "moneyFlowConfirm.claimTitle": "Talebi onayla",
+  "moneyFlowConfirm.claimTitle": "Ödülü almayı onayla",
   "moneyFlowConfirm.tipSubtitle": "Ana ağda gerçek USDC göndermek üzeresin.",
-  "moneyFlowConfirm.claimSubtitle": "Ana ağda gerçek USDC talep etmek üzeresin.",
+  "moneyFlowConfirm.claimSubtitle": "Ana ağda gerçek USDC almak üzeresin.",
+  "moneyFlowConfirm.to": "Alıcı",
+  "moneyFlowConfirm.claimTo": "Cüzdanına ödenir",
+  "moneyFlowConfirm.noHandle": "Kullanıcı adı yok — adresi kontrol et",
   "moneyFlowConfirm.realMoneyWarning": "Bu gerçek para ve geri alınamaz.",
   "moneyFlowConfirm.firstTipCheckbox": "Bunun gerçek para olduğunu ve geri alınamayacağını anlıyorum.",
-  "moneyFlowConfirm.sending": "Gönderiliyor…",
+  "moneyFlowConfirm.sendingIn": "{seconds} sn içinde gönderiliyor — iptal için geri al.",
   "moneyFlowConfirm.undo": "Geri al",
   "moneyFlowConfirm.cancel": "İptal",
   "moneyFlowConfirm.confirmTip": "Bahşişi onayla",
-  "moneyFlowConfirm.confirmClaim": "Talebi onayla"
+  "moneyFlowConfirm.confirmClaim": "Ödülü al"
 }
