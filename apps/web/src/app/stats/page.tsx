@@ -68,7 +68,7 @@ export default function StatsPage() {
     };
     setLoading(!data[tab]);
     load();
-    const t = setInterval(load, 10000); // live: refresh every 10s
+    const t = setInterval(load, 30_000); // /api/stats reuses a scan for 30 s, so poll no faster
     return () => {
       alive = false;
       clearInterval(t);
